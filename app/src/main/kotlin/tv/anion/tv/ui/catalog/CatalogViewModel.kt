@@ -56,7 +56,10 @@ class CatalogViewModel(private val registry: SourceRegistry) : ViewModel() {
                     _state.update {
                         if (it.sourceId != snapshot.sourceId) it
                         else it.copy(
-                            items = it.items + page.items,
+                            // Страницы каталога умеют пересекаться, а повтор
+                            // карточки — это дубликат ключа в LazyGrid и падение
+                            // всего экрана, а не просто лишняя плитка.
+                            items = (it.items + page.items).distinctBy { anime -> anime.source to anime.id },
                             page = nextPage,
                             hasMore = page.hasMore,
                             loading = false,

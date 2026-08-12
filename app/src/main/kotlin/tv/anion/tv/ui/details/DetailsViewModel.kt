@@ -65,14 +65,10 @@ class DetailsViewModel(
         _state.value = DetailsUiState(loading = true)
         viewModelScope.launch {
             runCatching {
-                android.util.Log.d("anion-details", "start $sourceId/$animeId")
                 val source = sources.byId(sourceId)
                 val details = source.details(animeId)
-                android.util.Log.d("anion-details", "details ok, translations=" + details.translations.size)
                 val translation = details.translations.firstOrNull()?.id
-                val eps = source.episodes(animeId, translation)
-                android.util.Log.d("anion-details", "episodes ok: " + eps.size)
-                Triple(details, eps, translation)
+                Triple(details, source.episodes(animeId, translation), translation)
             }.onSuccess { (details, episodes, translation) ->
                 _state.value = DetailsUiState(
                     details = details,
@@ -84,7 +80,6 @@ class DetailsViewModel(
                     resume = _state.value.resume,
                 )
             }.onFailure { error ->
-                android.util.Log.e("anion-details", "fail", error)
                 _state.value = DetailsUiState(loading = false, error = error.message)
             }
         }

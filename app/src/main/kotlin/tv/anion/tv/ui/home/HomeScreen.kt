@@ -84,7 +84,10 @@ fun HomeScreen(
                     LazyRow(
                         modifier = Modifier.rowFocus(),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        contentPadding = PaddingValues(vertical = 8.dp),
+                        // LazyRow клипует дочерние элементы по своему viewport.
+                        // Крайним карточкам нужен gutter для focus scale и рамки,
+                        // иначе первая плитка визуально срезается слева.
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                     ) {
                         itemsIndexed(row.items, key = { _, anime -> "${anime.source}:${anime.id}" }) { _, anime ->
                             val key = "${anime.source}:${anime.id}"

@@ -44,7 +44,9 @@ class HomeViewModel(
             progress.observeContinueWatching().collect { saved ->
                 _state.update { current ->
                     current.copy(rows = current.rows.map { row ->
-                        if (row.sourceId == null) row.copy(items = saved.map { it.asAnime() }) else row
+                        if (row.sourceId == null) {
+                            row.copy(items = saved.map { it.asAnime() }.distinctBy { it.source to it.id })
+                        } else row
                     })
                 }
             }
@@ -58,7 +60,8 @@ class HomeViewModel(
                         rows = current.rows.map { row ->
                             if (row.sourceId != source.id) row
                             else row.copy(
-                                items = result.getOrNull()?.items.orEmpty(),
+                                items = result.getOrNull()?.items.orEmpty()
+                                    .distinctBy { anime -> anime.source to anime.id },
                                 error = result.exceptionOrNull()?.message,
                             )
                         },

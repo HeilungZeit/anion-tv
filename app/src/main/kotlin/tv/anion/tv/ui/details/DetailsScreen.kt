@@ -27,9 +27,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -58,7 +61,6 @@ import tv.anion.tv.ui.components.MessagePane
 import tv.anion.tv.ui.components.SectionHeader
 import tv.anion.tv.ui.components.StablePosterImage
 import tv.anion.tv.ui.components.initialFocus
-import tv.anion.tv.ui.components.rememberInitialFocus
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -73,10 +75,26 @@ fun DetailsScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     LaunchedEffect(source, animeId) {
-        listState.scrollToItem(0)
         vm.load(SourceId.valueOf(source), animeId)
     }
-    val initial = rememberInitialFocus(state.episodes.isNotEmpty())
+    // Прокрутка наверх — отдельным эффектом и только когда список уже
+    // отрисован. scrollToItem на состоянии, не привязанном к LazyColumn,
+    // приостанавливается навсегда: пока экран в ветке загрузки, списка нет,
+    // и стоявший следом vm.load() не вызывался вовсе — детали висли на
+    // «Загрузка…» без единой ошибки в логах.
+    val initial = remember { FocusRequester() }
+    LaunchedEffect(source, animeId, state.details, state.episodes.isNotEmpty()) {
+        if (state.details == null) return@LaunchedEffect
+        runCatching { listState.scrollToItem(0) }
+        if (state.episodes.isNotEmpty()) {
+            // requestFocus сам вызывает bringIntoView и раньше утягивал верх hero
+            // за safe area. Фокусируем только после layout и возвращаем item в 0.
+            withFrameNanos { }
+            runCatching { initial.requestFocus() }
+            withFrameNanos { }
+            runCatching { listState.scrollToItem(0) }
+        }
+    }
 
     when {
         state.loading -> MessagePane("Загрузка…")
@@ -232,7 +250,7 @@ private fun DetailsHero(
                         .weight(1f)
                         .fillMaxHeight()
                         .padding(vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                 Text(
                     details.anime.title,
@@ -269,9 +287,10 @@ private fun DetailsHero(
                 details.description?.takeIf(String::isNotBlank)?.let {
                     Text(
                         it,
+                        modifier = Modifier.weight(1f, fill = false),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f),
-                        maxLines = 5,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

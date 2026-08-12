@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,12 +35,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -93,11 +100,12 @@ fun PlayerScreen(
         runCatching { if (overlay) panelFocus.requestFocus() else screenFocus.requestFocus() }
     }
 
-    // Панель гаснет сама только пока идёт воспроизведение: на паузе она —
-    // единственная подсказка, что делать дальше. Позиция в ключах эффекта
-    // продлевает показ, пока пользователь мотает.
-    LaunchedEffect(overlay, playback.isPlaying, playback.positionMs / 1000) {
-        if (overlay && playback.isPlaying) {
+    // Отсчёт ведётся от последнего нажатия, а не от появления панели: пока
+    // пультом пользуются — панель на экране, через семь секунд тишины уходит.
+    // Гаснет и на паузе тоже: там остаётся значок по центру, и кадр не закрыт.
+    var lastInput by remember { mutableIntStateOf(0) }
+    LaunchedEffect(overlay, lastInput) {
+        if (overlay) {
             delay(OVERLAY_TIMEOUT_MS)
             overlay = false
         }
@@ -127,12 +135,21 @@ fun PlayerScreen(
                 val command = RemoteKeyMap.map(native.keyCode, isLongPress = native.repeatCount > 0)
                     ?: return@onPreviewKeyEvent false
                 if (native.repeatCount > 0 && command !is PlayerCommand.SeekBy) return@onPreviewKeyEvent true
+                // Любое нажатие продлевает показ, включая стрелки, которые
+                // уходят кнопкам панели мимо ветки ниже.
+                lastInput++
 
                 // При открытой панели стрелки и OK принадлежат её кнопкам —
                 // перехватываем только то, что панель не обслуживает.
                 if (overlay) {
                     return@onPreviewKeyEvent when (command) {
-                        PlayerCommand.HidePanel, PlayerCommand.Back -> { overlay = false; true }
+                        // Вверх работает как переключатель: раз панель вызвали
+                        // им же, повторное нажатие ожидаемо её убирает. Иначе
+                        // клавиша уходила кнопкам панели и не делала ничего.
+                        PlayerCommand.ShowPanel,
+                        PlayerCommand.HidePanel,
+                        PlayerCommand.Back,
+                        -> { overlay = false; true }
                         PlayerCommand.PlayPause -> { togglePlay(); true }
                         PlayerCommand.Play -> { session.controller.play(); true }
                         PlayerCommand.Pause -> { session.controller.pause(); true }
@@ -150,12 +167,13 @@ fun PlayerScreen(
                         session.controller.seekBy(command.deltaMs)
                         overlay = true
                     }
-                    // OK: пока идёт опенинг — пропуск, иначе пауза. «Остановить»
-                    // это первое, чего ждут от центральной кнопки; раньше она
-                    // только открывала панель, и видео было не остановить.
+                    // OK при скрытой панели не трогает воспроизведение: как в
+                    // ютубе на ТВ, первое нажатие лишь показывает контролы с
+                    // фокусом на паузе, а останавливает уже второе — по кнопке.
+                    // Исключение — идущий опенинг: там OK сразу пропускает.
                     PlayerCommand.Confirm -> {
                         val skip = playback.visibleSkip
-                        if (skip != null) session.controller.skipTo(skip) else { togglePlay(); overlay = true }
+                        if (skip != null) session.controller.skipTo(skip) else overlay = true
                     }
                     PlayerCommand.ShowPanel -> overlay = true
                     PlayerCommand.HidePanel -> Unit
@@ -222,14 +240,10 @@ fun PlayerScreen(
                 durationMs = playback.durationMs,
                 isPlaying = playback.isPlaying,
                 canSkip = playback.visibleSkip != null,
-                hasNext = neighbours.next != null,
-                hasPrevious = neighbours.previous != null,
                 playFocus = panelFocus,
                 onPlayPause = ::togglePlay,
                 onSeek = { session.controller.seekBy(it) },
                 onSkip = { playback.visibleSkip?.let { session.controller.skipTo(it) } },
-                onNext = { neighbours.next?.let(onPlayEpisode) },
-                onPrevious = { neighbours.previous?.let(onPlayEpisode) },
             )
         }
     }
@@ -249,23 +263,24 @@ private fun PlayerPanel(
     durationMs: Long,
     isPlaying: Boolean,
     canSkip: Boolean,
-    hasNext: Boolean,
-    hasPrevious: Boolean,
     playFocus: FocusRequester,
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
     onSkip: () -> Unit,
-    onNext: () -> Unit,
-    onPrevious: () -> Unit,
 ) {
     Box(
         Modifier
             .fillMaxSize()
             .background(
+                // Затемнение только снизу, под текстом и кнопками: сверху
+                // затемнять нечего, там кадр, и тень выглядела грязью.
                 Brush.verticalGradient(
                     0f to Color.Transparent,
-                    0.45f to Color.Black.copy(alpha = 0.45f),
-                    1f to Color.Black.copy(alpha = 0.95f),
+                    0.28f to Color.Transparent,
+                    0.48f to Color.Black.copy(alpha = 0.06f),
+                    0.64f to Color.Black.copy(alpha = 0.20f),
+                    0.80f to Color.Black.copy(alpha = 0.52f),
+                    1f to Color.Black.copy(alpha = 0.92f),
                 )
             )
     ) {
@@ -302,21 +317,20 @@ private fun PlayerPanel(
 
                 Spacer(Modifier.height(22.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (hasPrevious) PanelButton("⏮  Предыдущая", onPrevious)
-                    PanelButton("↺  10 с", onClick = { onSeek(-RemoteKeyMap.SEEK_STEP_MS) })
+                    PanelButton("− 10 с", onClick = { onSeek(-RemoteKeyMap.SEEK_STEP_MS) })
                     PanelButton(
-                        text = if (isPlaying) "⏸  Пауза" else "▶  Продолжить",
+                        text = if (isPlaying) "Пауза" else "Продолжить",
                         onClick = onPlayPause,
                         modifier = Modifier.focusRequester(playFocus),
+                        icon = { tint -> TransportIcon(playing = isPlaying, tint = tint, size = 18.dp) },
                     )
-                    PanelButton("↻  10 с", onClick = { onSeek(RemoteKeyMap.SEEK_STEP_MS) })
-                    if (hasNext) PanelButton("⏭  Следующая", onNext)
+                    PanelButton("+ 10 с", onClick = { onSeek(RemoteKeyMap.SEEK_STEP_MS) })
                     if (canSkip) PanelButton("Пропустить опенинг", onSkip)
                 }
 
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Вверх — панель   ·   ← → — перемотка   ·   Назад — выйти",
+                    "OK — пауза   ·   ← → — перемотка   ·   Назад — выйти",
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.White.copy(alpha = 0.55f),
                 )
@@ -326,10 +340,18 @@ private fun PlayerPanel(
 }
 
 @Composable
-private fun PanelButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun PanelButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: (@Composable (tint: Color) -> Unit)? = null,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val tint = Color.White
+
     Button(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.onFocusChanged { focused = it.isFocused },
         colors = ButtonDefaults.colors(
             containerColor = Color.White.copy(alpha = 0.14f),
             contentColor = Color.White,
@@ -337,7 +359,35 @@ private fun PanelButton(text: String, onClick: () -> Unit, modifier: Modifier = 
             focusedContentColor = Color.White,
         ),
     ) {
-        Text(text, style = MaterialTheme.typography.labelLarge)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            icon?.invoke(tint)
+            Text(text, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/**
+ * Иконки нарисованы, а не взяты эмодзи: системный шрифт рисует ⏸/▶ цветными
+ * картинками, и на тёмной панели они выглядели инородным оранжевым пятном.
+ */
+@Composable
+private fun TransportIcon(playing: Boolean, tint: Color, size: Dp) {
+    Canvas(Modifier.size(size)) {
+        if (playing) {
+            val bar = this.size.width * 0.30f
+            val gap = this.size.width * 0.16f
+            val left = (this.size.width - (bar * 2 + gap)) / 2f
+            drawRect(tint, topLeft = Offset(left, 0f), size = Size(bar, this.size.height))
+            drawRect(tint, topLeft = Offset(left + bar + gap, 0f), size = Size(bar, this.size.height))
+        } else {
+            val path = Path().apply {
+                moveTo(this@Canvas.size.width * 0.12f, 0f)
+                lineTo(this@Canvas.size.width * 0.98f, this@Canvas.size.height / 2f)
+                lineTo(this@Canvas.size.width * 0.12f, this@Canvas.size.height)
+                close()
+            }
+            drawPath(path, tint)
+        }
     }
 }
 
@@ -372,7 +422,7 @@ private fun PauseBadge() {
             .background(Color.Black.copy(alpha = 0.55f)),
         contentAlignment = Alignment.Center,
     ) {
-        Text("⏸", style = MaterialTheme.typography.displaySmall, color = Color.White)
+        TransportIcon(playing = true, tint = Color.White, size = 34.dp)
     }
 }
 
@@ -389,7 +439,7 @@ private fun Pill(text: String) {
     )
 }
 
-private const val OVERLAY_TIMEOUT_MS = 5_000L
+private const val OVERLAY_TIMEOUT_MS = 7_000L
 
 private fun formatMs(ms: Long): String {
     if (ms <= 0) return "0:00"

@@ -4,11 +4,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -82,11 +85,30 @@ fun OverscanBox(
     content: @Composable BoxScope.() -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
+        val safeTop = maxHeight * 0.05f
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(horizontal = maxWidth * 0.05f, vertical = maxHeight * 0.05f),
+                .padding(horizontal = maxWidth * 0.05f, vertical = safeTop),
             content = content,
+        )
+
+        // Мягкая «стеклянная» кромка без отдельного blur-слоя: blur обрезался
+        // границей собственного bounds и давал заметную горизонтальную линию.
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(safeTop + 42.dp)
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color(0xB8171A20),
+                        0.28f to Color(0x9A18202A),
+                        0.58f to Color(0x531B2632),
+                        0.82f to Color(0x171D2935),
+                        1f to Color.Transparent,
+                    ),
+                ),
         )
     }
 }
