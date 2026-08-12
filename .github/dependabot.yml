@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Europe/Bratislava
+    open-pull-requests-limit: 5
+    groups:
+      kotlin-and-android:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "com.android*"
+          - "androidx.*"
+      runtime-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: Europe/Bratislava
+    open-pull-requests-limit: 5
