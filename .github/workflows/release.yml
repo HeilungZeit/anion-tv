@@ -132,9 +132,21 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${{ github.ref_name }}"
-          release/*
-          --verify-tag
-          --generate-notes
-          --title "Anion TV ${{ steps.version.outputs.name }}"
+          TAG: ${{ github.ref_name }}
+          TITLE: Anion TV ${{ steps.version.outputs.name }}
+        shell: bash
+        run: |
+          # Релиз может уже существовать: кнопка "Draft a new release" в вебе
+          # заводит и тег, и релиз разом, после чего пуш тега запускает этот
+          # воркфлоу, а `gh release create` падает на "already exists". Обидно
+          # это тем, что к моменту падения всё уже собрано, подписано и
+          # проверено — терялись только APK и AAB, релиз оставался пустым.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Релиз $TAG уже создан — догружаю в него файлы"
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* \
+              --verify-tag \
+              --generate-notes \
+              --title "$TITLE"
+          fi
