@@ -2,16 +2,12 @@ package tv.anion.tv.ui.theme
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -81,41 +77,24 @@ fun AnionBackground(content: @Composable BoxScope.() -> Unit) {
 /**
  * Поля под обрез телевизора (PLAN Э4). Плеер — без них.
  *
- * По вертикали поле вдвое уже горизонтального: одинаковые 5% съедали сверху и
- * снизу по полосе в полсотни dp, экран выглядел зажатым, а ряд карточек терял
- * ту самую высоту, из-за которой название под постером не помещалось. Режет
- * телевизор в первую очередь бока, так что 5% оставлены там, где они и нужны.
+ * Числа взяты из гайдлайнов Android TV (Styles → Layouts): safe area — 48dp по
+ * бокам и 24–27dp сверху и снизу. Раньше здесь стояли одинаковые 5% от стороны:
+ * по горизонтали это те же 48dp и было верно, а по вертикали давало столько же,
+ * втрое больше нужного, — экран выглядел зажатым сверху и снизу.
+ *
+ * Градиентной «кромки» сверху больше нет: полоса в семь десятков dp и была тем,
+ * что читалось как громоздкая рамка. Фон приложения и так тёмный, отделять
+ * контент от края нечем.
  */
 @Composable
 fun OverscanBox(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        val safeTop = maxHeight * 0.025f
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(horizontal = maxWidth * 0.05f, vertical = safeTop),
-            content = content,
-        )
-
-        // Мягкая «стеклянная» кромка без отдельного blur-слоя: blur обрезался
-        // границей собственного bounds и давал заметную горизонтальную линию.
-        Box(
-            Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(safeTop + 30.dp)
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color(0xB8171A20),
-                        0.28f to Color(0x9A18202A),
-                        0.58f to Color(0x531B2632),
-                        0.82f to Color(0x171D2935),
-                        1f to Color.Transparent,
-                    ),
-                ),
-        )
-    }
+    Box(
+        modifier
+            .fillMaxSize()
+            .padding(horizontal = 48.dp, vertical = 24.dp),
+        content = content,
+    )
 }

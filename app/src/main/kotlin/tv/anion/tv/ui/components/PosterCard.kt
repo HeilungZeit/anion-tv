@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
@@ -55,8 +56,10 @@ fun PosterCard(
     showFeedMetadata: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
+    // 1.05 — средняя из трёх величин, которые гайдлайны Android TV называют для
+    // фокуса (1.025 / 1.05 / 1.1). Больше на плитке этого размера уже дрожит.
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.055f else 1f,
+        targetValue = if (focused) 1.05f else 1f,
         animationSpec = tween(180),
         label = "poster-focus",
     )
@@ -68,82 +71,99 @@ fun PosterCard(
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .onFocusChanged { focused = it.hasFocus },
     ) {
-        Surface(
-            onClick = onClick,
-            scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
-            modifier = Modifier
-                .aspectRatio(5f / 7f)
+        // Обводка фокуса рисуется снаружи постера, с зазором — так её описывают
+        // гайдлайны (outline width + outline inset), и так она видна на кадре
+        // любой яркости. Белая, а не брендовая: на постерах с синим небом
+        // синяя рамка терялась.
+        Box(
+            Modifier
+                .fillMaxWidth()
                 .border(
-                    width = if (focused) 2.dp else 1.dp,
-                    color = if (focused) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f),
-                    shape = shape,
+                    width = if (focused) 3.dp else 0.dp,
+                    color = if (focused) Color.White else Color.Transparent,
+                    shape = RoundedCornerShape(16.dp),
                 )
-                .clip(shape),
+                .padding(4.dp),
         ) {
-            Box(Modifier.fillMaxSize()) {
-                StablePosterImage(
-                    // Крупный постер первым: миниатюра рассчитана на список из
-                    // мелких плиток, а на 4K-экране одна плитка — это сотни
-                    // пикселей, и small растягивался в мыло. Coil декодирует под
-                    // размер виджета, так что памяти это не прибавляет.
-                    url = anime.posterUrl ?: anime.thumbnailUrl,
-                    title = anime.title,
-                    widthPx = 480,
-                    heightPx = 672,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                if (showFeedMetadata) {
-                    anime.feedStatus()?.let { status ->
-                        StatusBadge(
-                            status = status,
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .padding(8.dp),
-                        )
-                    }
-                    anime.score
-                        ?.takeIf { it > 0.0 }
-                        ?.let { score ->
-                            RatingBadge(
-                                score = score,
+            Surface(
+                onClick = onClick,
+                scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+                modifier = Modifier
+                    .aspectRatio(5f / 7f)
+                    .clip(shape),
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    StablePosterImage(
+                        // Крупный постер первым: миниатюра рассчитана на список из
+                        // мелких плиток, а на 4K-экране одна плитка — это сотни
+                        // пикселей, и small растягивался в мыло. Coil декодирует под
+                        // размер виджета, так что памяти это не прибавляет.
+                        url = anime.posterUrl ?: anime.thumbnailUrl,
+                        title = anime.title,
+                        widthPx = 480,
+                        heightPx = 672,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (showFeedMetadata) {
+                        anime.feedStatus()?.let { status ->
+                            StatusBadge(
+                                status = status,
                                 modifier = Modifier
-                                    .align(Alignment.BottomStart)
+                                    .align(Alignment.TopStart)
                                     .padding(8.dp),
                             )
                         }
+                        anime.score
+                            ?.takeIf { it > 0.0 }
+                            ?.let { score ->
+                                RatingBadge(
+                                    score = score,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(8.dp),
+                                )
+                            }
+                    }
                 }
             }
         }
-        Spacer(Modifier.height(5.dp))
-        // Название и метаданные намеренно находятся в одном блоке: Material TV
-        // добавлял между отдельными слотами слишком большой системный отступ.
-        Box(Modifier.height(35.dp)) {
-            Text(
-                anime.title,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = if (focused) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                lineHeight = 16.sp,
-            )
-        }
-        Spacer(Modifier.height(1.dp))
-        if (showFeedMetadata) {
-            FeedCardSubtitle(anime)
-        } else {
-            Text(
-                listOfNotNull(
-                    anime.year?.toString(),
-                    when (anime.source) {
-                        SourceId.ANILIBRIA -> "AniLibria"
-                        SourceId.KODIK -> "anion"
-                    },
-                ).joinToString("  •  "),
-                maxLines = 1,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelSmall,
-            )
+        // Подпись выровнена по постеру, а не по обводке: блок текста должен
+        // совпадать по ширине с картинкой (гайдлайны по анатомии карточки),
+        // поэтому здесь тот же отступ 4dp, что и у зазора под обводку.
+        Column(Modifier.padding(horizontal = 4.dp)) {
+            Spacer(Modifier.height(7.dp))
+            // Название и метаданные намеренно находятся в одном блоке: Material TV
+            // добавлял между отдельными слотами слишком большой системный отступ.
+            Box(Modifier.height(38.dp)) {
+                Text(
+                    anime.title,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    // Белый и в фокусе, и без него: цветное название прыгало
+                    // вместе с обводкой и читалось как второй акцент.
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                )
+            }
+            Spacer(Modifier.height(2.dp))
+            if (showFeedMetadata) {
+                FeedCardSubtitle(anime)
+            } else {
+                Text(
+                    listOfNotNull(
+                        anime.year?.toString(),
+                        when (anime.source) {
+                            SourceId.ANILIBRIA -> "AniLibria"
+                            SourceId.KODIK -> "anion"
+                        },
+                    ).joinToString("  •  "),
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
     }
 }

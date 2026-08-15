@@ -128,20 +128,20 @@ fun ScreenHeader(title: String, subtitle: String? = null, modifier: Modifier = M
     }
 }
 
+/**
+ * Заголовок ряда — просто текст, без акцентной полоски слева.
+ *
+ * Так он выглядит во всех ТВ-каталогах: подпись ничего не должна перетягивать
+ * на себя, работает она только как разделитель между рядами. Полоска добавляла
+ * на экран пять лишних акцентов и спорила с обводкой фокуса.
+ */
 @Composable
 fun SectionHeader(title: String, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier
-                .size(width = 4.dp, height = 24.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary),
-        )
-        Text(
-            title,
-            modifier = Modifier.padding(start = 10.dp),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
+    Text(
+        title,
+        modifier = modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = Color.White,
+    )
 }
