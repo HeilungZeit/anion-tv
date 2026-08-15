@@ -95,7 +95,13 @@ fun PlayerScreen(
     val screenFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
 
+    // Полоса прокрутки — верхний фокусируемый элемент панели, и «вверх»
+    // закрывает панель только с неё. Из ряда кнопок вверх сначала ведёт на
+    // полосу: раньше одно случайное нажатие смахивало панель целиком.
+    var seekBarFocused by remember { mutableStateOf(false) }
+
     LaunchedEffect(overlay, loading, error) {
+        if (!overlay) seekBarFocused = false
         if (loading || error != null) return@LaunchedEffect
         runCatching { if (overlay) panelFocus.requestFocus() else screenFocus.requestFocus() }
     }
@@ -143,13 +149,24 @@ fun PlayerScreen(
                 // перехватываем только то, что панель не обслуживает.
                 if (overlay) {
                     return@onPreviewKeyEvent when (command) {
-                        // Вверх работает как переключатель: раз панель вызвали
-                        // им же, повторное нажатие ожидаемо её убирает. Иначе
-                        // клавиша уходила кнопкам панели и не делала ничего.
-                        PlayerCommand.ShowPanel,
-                        PlayerCommand.HidePanel,
-                        PlayerCommand.Back,
-                        -> { overlay = false; true }
+                        // Вверх убирает панель только с полосы прокрутки — выше
+                        // неё в панели ничего нет. Из ряда кнопок он отдаётся
+                        // системе фокуса и переводит фокус на полосу: панель
+                        // вызывают тем же «вверх», и промахнуться по кнопке,
+                        // смахнув её целиком, было слишком легко.
+                        PlayerCommand.ShowPanel ->
+                            if (seekBarFocused) { overlay = false; true } else false
+                        // Вниз зеркально: с полосы возвращает к кнопкам, и
+                        // только из ряда кнопок убирает панель. Иначе фокус,
+                        // поднявшийся на полосу, обратно уже не спускался.
+                        PlayerCommand.HidePanel ->
+                            if (seekBarFocused) false else { overlay = false; true }
+                        // Стрелки принадлежат кнопкам панели, но на самой
+                        // полосе им положено мотать: сфокусированная полоса,
+                        // которая ни на что не отзывается, выглядит зависшей.
+                        is PlayerCommand.SeekBy ->
+                            if (seekBarFocused) { session.controller.seekBy(command.deltaMs); true } else false
+                        PlayerCommand.Back -> { overlay = false; true }
                         PlayerCommand.PlayPause -> { togglePlay(); true }
                         PlayerCommand.Play -> { session.controller.play(); true }
                         PlayerCommand.Pause -> { session.controller.pause(); true }
@@ -241,6 +258,7 @@ fun PlayerScreen(
                 isPlaying = playback.isPlaying,
                 canSkip = playback.visibleSkip != null,
                 playFocus = panelFocus,
+                onSeekBarFocusChanged = { seekBarFocused = it },
                 onPlayPause = ::togglePlay,
                 onSeek = { session.controller.seekBy(it) },
                 onSkip = { playback.visibleSkip?.let { session.controller.skipTo(it) } },
@@ -264,6 +282,7 @@ private fun PlayerPanel(
     isPlaying: Boolean,
     canSkip: Boolean,
     playFocus: FocusRequester,
+    onSeekBarFocusChanged: (Boolean) -> Unit,
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
     onSkip: () -> Unit,
@@ -303,7 +322,7 @@ private fun PlayerPanel(
                 )
 
                 Spacer(Modifier.height(18.dp))
-                ProgressBar(positionMs, durationMs)
+                ProgressBar(positionMs, durationMs, onFocusChanged = onSeekBarFocusChanged)
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(formatMs(positionMs), style = MaterialTheme.typography.labelLarge)
@@ -391,22 +410,40 @@ private fun TransportIcon(playing: Boolean, tint: Color, size: Dp) {
     }
 }
 
+/**
+ * Полоса прокрутки фокусируется наравне с кнопками: она верхний элемент панели,
+ * и «вверх» убирает панель именно с неё. Фокус на полосе видно по утолщению и
+ * подсветке дорожки: иначе непонятно, куда уехало управление с кнопок.
+ */
 @Composable
-private fun ProgressBar(positionMs: Long, durationMs: Long) {
+private fun ProgressBar(
+    positionMs: Long,
+    durationMs: Long,
+    onFocusChanged: (Boolean) -> Unit,
+) {
     val target = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val fraction by animateFloatAsState(target, tween(220), label = "progress")
+    var focused by remember { mutableStateOf(false) }
+    val height by animateFloatAsState(if (focused) 14f else 8f, tween(160), label = "seekbar-height")
 
     Box(
         Modifier
             .fillMaxWidth()
-            .height(8.dp)
+            .height(height.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(Color.White.copy(alpha = 0.20f))
+            .background(Color.White.copy(alpha = if (focused) 0.32f else 0.20f))
+            // Тот же порядок, что и у экрана: onFocusChanged обязан стоять до
+            // focusable(), иначе он не попадает в фокус-узел.
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
+            .focusable()
     ) {
         Box(
             Modifier
                 .fillMaxWidth(fraction)
-                .height(8.dp)
+                .height(height.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.primary)
         )
