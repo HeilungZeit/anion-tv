@@ -36,6 +36,7 @@ import tv.anion.tv.ui.components.SectionHeader
 fun HomeScreen(
     onOpenCatalog: () -> Unit,
     onOpenSearch: () -> Unit,
+    onOpenBookmarks: () -> Unit,
     onOpenAccount: () -> Unit,
     onOpenAnime: (source: String, animeId: String) -> Unit,
 ) {
@@ -58,7 +59,7 @@ fun HomeScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         item {
@@ -69,50 +70,52 @@ fun HomeScreen(
                     modifier = Modifier.focusRequester(navigationRequester),
                 )
                 HeaderAction("Поиск", onOpenSearch)
+                HeaderAction("Закладки", onOpenBookmarks)
                 HeaderAction("Аккаунт", onOpenAccount)
             }
         }
         state.rows.forEach { row ->
             if (row.sourceId == null && row.items.isEmpty()) return@forEach
             item {
-                SectionHeader(row.title, Modifier.padding(top = 8.dp))
-            }
-            item {
-                if (row.error != null) {
-                    Text(row.error, style = MaterialTheme.typography.bodyMedium)
-                } else {
-                    LazyRow(
-                        modifier = Modifier.rowFocus(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        // LazyRow клипует дочерние элементы по своему viewport.
-                        // Крайним карточкам нужен gutter для focus scale и рамки,
-                        // иначе первая плитка визуально срезается слева.
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-                    ) {
-                        itemsIndexed(row.items, key = { _, anime -> "${anime.source}:${anime.id}" }) { _, anime ->
-                            val key = "${anime.source}:${anime.id}"
-                            val requester = remember(key) { FocusRequester() }
-                            DisposableEffect(key, requester) {
-                                requesters[key] = requester
-                                onDispose {
-                                    if (requesters[key] === requester) requesters.remove(key)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SectionHeader(row.title, Modifier.padding(top = 4.dp))
+                    if (row.error != null) {
+                        Text(row.error, style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        LazyRow(
+                            modifier = Modifier.rowFocus(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            // LazyRow клипует дочерние элементы по своему viewport.
+                            // Крайним карточкам нужен gutter для focus scale и рамки,
+                            // иначе первая плитка визуально срезается слева.
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        ) {
+                            itemsIndexed(row.items, key = { _, anime -> "${anime.source}:${anime.id}" }) { _, anime ->
+                                val key = "${anime.source}:${anime.id}"
+                                val requester = remember(key) { FocusRequester() }
+                                DisposableEffect(key, requester) {
+                                    requesters[key] = requester
+                                    onDispose {
+                                        if (requesters[key] === requester) requesters.remove(key)
+                                    }
                                 }
-                            }
-                            val cardModifier = Modifier
-                                .focusRequester(requester)
-                                .onFocusChanged { if (it.isFocused) vm.lastFocusedKey = key }
-                            if (row.sourceId == null) {
-                                ContinueWatchingCard(
-                                    anime = anime,
-                                    onClick = { onOpenAnime(anime.source.name, anime.id) },
-                                    modifier = cardModifier,
-                                )
-                            } else {
-                                PosterCard(
-                                    anime = anime,
-                                    onClick = { onOpenAnime(anime.source.name, anime.id) },
-                                    modifier = cardModifier,
-                                )
+                                val cardModifier = Modifier
+                                    .focusRequester(requester)
+                                    .onFocusChanged { if (it.isFocused) vm.lastFocusedKey = key }
+                                if (row.sourceId == null) {
+                                    ContinueWatchingCard(
+                                        anime = anime,
+                                        onClick = { onOpenAnime(anime.source.name, anime.id) },
+                                        modifier = cardModifier,
+                                    )
+                                } else {
+                                    PosterCard(
+                                        anime = anime,
+                                        onClick = { onOpenAnime(anime.source.name, anime.id) },
+                                        modifier = cardModifier,
+                                        showFeedMetadata = true,
+                                    )
+                                }
                             }
                         }
                     }

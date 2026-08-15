@@ -163,6 +163,11 @@ class KodikSource(
         year = dto.year,
         posterUrl = dto.poster?.fullsize ?: dto.poster?.mega ?: dto.poster?.huge,
         thumbnailUrl = dto.poster?.mega ?: dto.poster?.huge ?: dto.poster?.fullsize ?: dto.poster?.big,
+        score = dto.rating?.average,
+        status = dto.animeStatus?.title,
+        statusCode = dto.animeStatus?.alias,
+        airedEpisodes = dto.episodes?.aired,
+        episodesTotal = dto.episodes?.count,
     )
 
     private fun toAnime(dto: AnimeDetailsDto) = Anime(
@@ -173,6 +178,11 @@ class KodikSource(
         year = dto.year,
         posterUrl = dto.poster?.fullsize ?: dto.poster?.mega ?: dto.poster?.huge,
         thumbnailUrl = dto.poster?.mega ?: dto.poster?.huge ?: dto.poster?.fullsize ?: dto.poster?.big,
+        score = dto.rating?.average,
+        status = dto.animeStatus?.title,
+        statusCode = dto.animeStatus?.alias,
+        airedEpisodes = dto.episodes?.aired,
+        episodesTotal = dto.episodes?.count,
     )
 
     private companion object {

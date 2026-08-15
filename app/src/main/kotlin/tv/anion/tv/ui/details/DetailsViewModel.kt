@@ -11,6 +11,10 @@ import tv.anion.source.SourceRegistry
 import tv.anion.source.model.AnimeDetails
 import tv.anion.source.model.Episode
 import tv.anion.data.repo.WatchProgressRepository
+import tv.anion.data.sync.BookmarkSync
+import tv.anion.data.repo.BookmarkSeed
+import tv.anion.data.repo.BookmarkRepository
+import tv.anion.data.repo.BookmarkKind
 import kotlinx.coroutines.Job
 
 data class DetailsUiState(
@@ -24,6 +28,8 @@ data class DetailsUiState(
     val partial: Map<Int, Float> = emptyMap(),
     /** Куда ведёт главная кнопка: продолжить недосмотренное или начать сначала. */
     val resume: ResumePoint? = null,
+    /** Текущий статус закладки; null — тайтла в закладках нет. */
+    val bookmark: BookmarkKind? = null,
 )
 
 data class ResumePoint(val episode: Int, val positionMs: Long)
@@ -31,18 +37,28 @@ data class ResumePoint(val episode: Int, val positionMs: Long)
 class DetailsViewModel(
     private val sources: SourceRegistry,
     private val progress: WatchProgressRepository,
+    private val bookmarks: BookmarkRepository,
+    private val sync: BookmarkSync,
 ) : ViewModel() {
     private val _state = MutableStateFlow(DetailsUiState())
     val state: StateFlow<DetailsUiState> = _state.asStateFlow()
     private var sourceId: SourceId? = null
     private var animeId: String? = null
     private var progressJob: Job? = null
+    private var bookmarkJob: Job? = null
 
     fun load(sourceId: SourceId, animeId: String) {
         if (this.sourceId == sourceId && this.animeId == animeId && _state.value.details != null) return
         this.sourceId = sourceId
         this.animeId = animeId
         progressJob?.cancel()
+        bookmarkJob?.cancel()
+        bookmarkJob = viewModelScope.launch {
+            bookmarks.observeAll().collect { all ->
+                val kind = all.firstOrNull { it.source == sourceId && it.animeId == animeId }?.kind
+                _state.value = _state.value.copy(bookmark = kind)
+            }
+        }
         progressJob = viewModelScope.launch {
             progress.observeAnime(sourceId, animeId).collect { values ->
                 // Продолжаем самую свежую недосмотренную серию: на ТВ это
@@ -78,9 +94,47 @@ class DetailsViewModel(
                     watchedEpisodes = _state.value.watchedEpisodes,
                     partial = _state.value.partial,
                     resume = _state.value.resume,
+                    // Статус из Room приходит раньше ответа сети, и целиком
+                    // пересобранное состояние его затирало: кнопка показывала
+                    // «В закладки» у тайтла, который в закладках уже был.
+                    bookmark = _state.value.bookmark,
                 )
             }.onFailure { error ->
                 _state.value = DetailsUiState(loading = false, error = error.message)
+            }
+        }
+    }
+
+    /**
+     * Ставит или снимает статус. Наверх уходит обычным синком: локальная запись
+     * помечается dirty, а удаление отправляется сразу — потом от него не
+     * останется следа, по которому серверу можно объяснить, что убрать.
+     */
+    fun setBookmark(kind: BookmarkKind?) {
+        val sourceId = sourceId ?: return
+        val animeId = animeId ?: return
+        val details = _state.value.details ?: return
+
+        viewModelScope.launch {
+            runCatching {
+                if (kind == null) {
+                    val removed = bookmarks.remove(sourceId, animeId)
+                    if (removed != null) sync.deleteRemote(removed)
+                } else {
+                    bookmarks.setKind(
+                        BookmarkSeed(
+                            source = sourceId,
+                            animeId = animeId,
+                            title = details.anime.title,
+                            posterUrl = details.anime.thumbnailUrl ?: details.anime.posterUrl,
+                            totalEpisodes = details.episodesTotal ?: _state.value.episodes.size,
+                        ),
+                        kind,
+                    )
+                    sync.pushDirty()
+                }
+            }.onFailure { error ->
+                _state.value = _state.value.copy(error = error.message)
             }
         }
     }

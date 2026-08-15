@@ -115,6 +115,10 @@ class AniLibriaSource(private val api: AniLibriaApi) : AnimeSource {
             ?: dto.poster?.optimized?.src
             ?: dto.poster?.preview
             ?: dto.poster?.src)?.absoluteMediaUrl(),
+        status = if (dto.isInProduction) "Онгоинг" else "Вышло",
+        statusCode = if (dto.isInProduction) "ongoing" else "released",
+        airedEpisodes = dto.episodes.size.takeIf { it > 0 },
+        episodesTotal = dto.episodesTotal,
     )
 
     private fun TimeRangeDto.toSegment(): Segment? =

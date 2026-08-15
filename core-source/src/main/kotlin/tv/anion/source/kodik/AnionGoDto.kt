@@ -32,6 +32,8 @@ internal data class AnimeDetailsDto(
     val poster: PosterDto? = null,
     val genres: List<GenreDto> = emptyList(),
     val episodes: EpisodesDto? = null,
+    val rating: RatingDto? = null,
+    val animeStatus: AnimeStatusDto? = null,
     val blockedIn: List<String> = emptyList(),
     val remoteIds: RemoteIdsDto? = null,
 )

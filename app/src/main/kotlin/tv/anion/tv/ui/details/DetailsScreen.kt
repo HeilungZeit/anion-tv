@@ -1,6 +1,7 @@
 package tv.anion.tv.ui.details
 
 import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
@@ -27,6 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -44,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Button
+import tv.anion.data.repo.BookmarkKind
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
@@ -61,6 +67,7 @@ import tv.anion.tv.ui.components.MessagePane
 import tv.anion.tv.ui.components.SectionHeader
 import tv.anion.tv.ui.components.StablePosterImage
 import tv.anion.tv.ui.components.initialFocus
+import tv.anion.tv.ui.components.rememberInitialFocus
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -71,7 +78,9 @@ fun DetailsScreen(
     onPlay: (episode: Int, translationId: String?) -> Unit,
 ) {
     val container = LocalAppContainer.current
-    val vm = viewModel { DetailsViewModel(container.sources, container.watchProgress) }
+    val vm = viewModel {
+        DetailsViewModel(container.sources, container.watchProgress, container.bookmarks, container.bookmarkSync)
+    }
     val state by vm.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     LaunchedEffect(source, animeId) {
@@ -83,6 +92,14 @@ fun DetailsScreen(
     // и стоявший следом vm.load() не вызывался вовсе — детали висли на
     // «Загрузка…» без единой ошибки в логах.
     val initial = remember { FocusRequester() }
+    var bookmarkMenu by remember { mutableStateOf(false) }
+    val bookmarkFocus = rememberInitialFocus(bookmarkMenu)
+    // Закладки живут на бэке anion и знают только его тайтлы: у AniLibria нет
+    // yumiId, обязательного для POST /bookmarks. Показывать управление, которое
+    // всё равно не доедет до сайта, — обман.
+    val bookmarkSupported = SourceId.valueOf(source) == SourceId.KODIK
+    BackHandler(enabled = bookmarkMenu) { bookmarkMenu = false }
+
     LaunchedEffect(source, animeId, state.details, state.episodes.isNotEmpty()) {
         if (state.details == null) return@LaunchedEffect
         runCatching { listState.scrollToItem(0) }
@@ -116,6 +133,9 @@ fun DetailsScreen(
                         state.episodes.any { it.number == point.episode }
                     }
                     DetailsHero(
+                        bookmark = state.bookmark,
+                        bookmarkSupported = bookmarkSupported,
+                        onBookmarkClick = { bookmarkMenu = !bookmarkMenu },
                         details = details,
                         canPlay = state.episodes.isNotEmpty(),
                         playLabel = when {
@@ -134,12 +154,26 @@ fun DetailsScreen(
                     )
                 }
 
+                if (bookmarkSupported && bookmarkMenu) {
+                    item { SectionHeader("Статус в закладках") }
+                    item {
+                        BookmarkMenu(
+                            current = state.bookmark,
+                            onSelect = { kind ->
+                                vm.setBookmark(kind)
+                                bookmarkMenu = false
+                            },
+                            firstFocus = Modifier.initialFocus(bookmarkFocus),
+                        )
+                    }
+                }
+
                 if (details.translations.size > 1) {
                     item { SectionHeader("Озвучка") }
                     item {
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding = PaddingValues(vertical = 4.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
                         ) {
                             items(details.translations, key = { it.id }) { translation ->
                                 TranslationCard(
@@ -200,6 +234,10 @@ private fun DetailsHero(
     canPlay: Boolean,
     playLabel: String,
     onPlay: () -> Unit,
+    bookmark: BookmarkKind?,
+    /** У AniLibria закладок нет вовсе — кнопку не показываем. */
+    bookmarkSupported: Boolean,
+    onBookmarkClick: () -> Unit,
     modifier: Modifier,
 ) {
     val shape = RoundedCornerShape(24.dp)
@@ -281,8 +319,26 @@ private fun DetailsHero(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Button(onClick = onPlay, enabled = canPlay, modifier = modifier) {
-                    Text(playLabel)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = onPlay, enabled = canPlay, modifier = modifier) {
+                        Text(playLabel)
+                    }
+                    if (bookmarkSupported) {
+                        // Одна кнопка вместо ряда из пяти статусов: на карточке
+                        // важно видеть текущее состояние, а выбирать статус —
+                        // отдельный, осознанный шаг.
+                        Button(
+                            onClick = onBookmarkClick,
+                            colors = ButtonDefaults.colors(
+                                containerColor = Color.White.copy(alpha = 0.14f),
+                                contentColor = Color.White,
+                                focusedContainerColor = MaterialTheme.colorScheme.primary,
+                                focusedContentColor = Color.White,
+                            ),
+                        ) {
+                            Text(bookmark?.let { "✓  ${it.label()}" } ?: "＋  В закладки")
+                        }
+                    }
                 }
                 details.description?.takeIf(String::isNotBlank)?.let {
                     Text(
@@ -438,11 +494,9 @@ private fun formatMs(ms: Long): String {
 
 private fun AnimeDetails.metadataLabels(): List<String> = buildList {
     anime.year?.let { add(it.toString()) }
-    type?.let(::add)
-    status?.let(::add)
-    ageRating?.let(::add)
+    statusLabel()?.let(::add)
     score?.takeIf { it > 0 }?.let { value ->
-        val votes = scoreVotes?.takeIf { it > 0 }?.let { " · ${NumberFormat.getIntegerInstance(Locale.forLanguageTag("ru-RU")).format(it)}" }.orEmpty()
+        val votes = scoreVotes?.takeIf { it > 0 }?.let { " · ${ru.format(it)}" }.orEmpty()
         add("★ ${String.format(Locale.US, "%.1f", value)}$votes")
     }
     val aired = airedEpisodes
@@ -451,8 +505,34 @@ private fun AnimeDetails.metadataLabels(): List<String> = buildList {
         aired != null && total != null -> add("$aired из $total серий")
         total != null -> add("$total серий")
     }
-    views?.takeIf { it > 0 }?.let {
-        add("${NumberFormat.getIntegerInstance(Locale.forLanguageTag("ru-RU")).format(it)} просмотров")
+    views?.takeIf { it > 0 }?.let { add("${ru.format(it)} ${plural(it, "просмотр", "просмотра", "просмотров")}") }
+}
+
+private val ru = NumberFormat.getIntegerInstance(Locale.forLanguageTag("ru-RU"))
+
+/**
+ * Бэк отдаёт статус как есть — где-то «онгоинг», где-то «вышел», а для минимально
+ * заполненных тайтлов и вовсе `Unknown`. Приводим к трём понятным словам и
+ * молчим, если статуса нет: пустой чип хуже отсутствующего.
+ */
+private fun AnimeDetails.statusLabel(): String? {
+    val raw = status?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
+    return when {
+        "анонс" in raw || "announce" in raw -> "Анонс"
+        "онгоинг" in raw || "ongoing" in raw -> "Онгоинг"
+        "вышел" in raw || "выпуск" in raw || "заверш" in raw || "released" in raw || "complete" in raw -> "Вышел"
+        "unknown" in raw -> null
+        else -> raw.replaceFirstChar(Char::uppercase)
+    }
+}
+
+private fun plural(count: Int, one: String, few: String, many: String): String {
+    val mod100 = count % 100
+    if (mod100 in 11..14) return many
+    return when (count % 10) {
+        1 -> one
+        2, 3, 4 -> few
+        else -> many
     }
 }
 
@@ -469,6 +549,60 @@ private fun List<Episode>.forHorizontalGrid(rows: Int): List<Episode> {
             repeat(rows) { row ->
                 val index = row * columns + column
                 if (index < this@forHorizontalGrid.size) add(this@forHorizontalGrid[index])
+            }
+        }
+    }
+}
+
+/** Порядок статусов повторяет сайт, чтобы привычка переносилась на ТВ. */
+private val BOOKMARK_KINDS = listOf(
+    BookmarkKind.WATCHING to "Смотрю",
+    BookmarkKind.WILL_WATCH to "Буду смотреть",
+    BookmarkKind.WATCHED to "Просмотрено",
+    BookmarkKind.ON_HOLD to "Отложено",
+    BookmarkKind.DROPPED to "Брошено",
+)
+
+internal fun BookmarkKind.label(): String =
+    BOOKMARK_KINDS.firstOrNull { it.first == this }?.second ?: name
+
+@Composable
+private fun BookmarkMenu(
+    current: BookmarkKind?,
+    onSelect: (BookmarkKind?) -> Unit,
+    firstFocus: Modifier,
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+    ) {
+        itemsIndexed(BOOKMARK_KINDS, key = { _, item -> item.first.name }) { index, (kind, label) ->
+            val selected = kind == current
+            Button(
+                onClick = { onSelect(kind) },
+                modifier = if (index == 0) firstFocus else Modifier,
+                scale = ButtonDefaults.scale(focusedScale = 1f),
+                colors = ButtonDefaults.colors(
+                    containerColor = if (selected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.10f),
+                    contentColor = Color.White,
+                    focusedContainerColor = MaterialTheme.colorScheme.primary,
+                    focusedContentColor = Color.White,
+                ),
+            ) { Text(if (selected) "$label  ✓" else label) }
+        }
+
+        if (current != null) {
+            item(key = "remove") {
+                Button(
+                    onClick = { onSelect(null) },
+                    scale = ButtonDefaults.scale(focusedScale = 1f),
+                    colors = ButtonDefaults.colors(
+                        containerColor = Color.White.copy(alpha = 0.10f),
+                        contentColor = MaterialTheme.colorScheme.error,
+                        focusedContainerColor = MaterialTheme.colorScheme.error,
+                        focusedContentColor = Color.White,
+                    ),
+                ) { Text("Убрать из закладок") }
             }
         }
     }

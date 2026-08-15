@@ -65,6 +65,10 @@ class AniLibriaSourceTest {
         assertEquals(3, page.items.size)
         assertEquals(1, page.page)
         assertTrue(page.hasMore, "в фикстуре 632 страницы")
+        with(page.items.first()) {
+            assertEquals("ongoing", statusCode)
+            assertEquals(12, episodesTotal)
+        }
     }
 
     @Test

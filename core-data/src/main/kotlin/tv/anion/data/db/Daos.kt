@@ -41,6 +41,7 @@ interface BookmarkStore {
     suspend fun dirty(): List<BookmarkEntity>
     suspend fun upsert(value: BookmarkEntity)
     suspend fun markSynced(source: String, animeId: String, updatedAt: Long, serverId: String?, syncedAt: Long): Int
+    suspend fun delete(source: String, animeId: String)
 }
 
 @Dao
@@ -48,6 +49,8 @@ interface BookmarkDao : BookmarkStore {
     @Query("SELECT * FROM bookmarks ORDER BY updatedAt DESC")
     override fun observeAll(): Flow<List<BookmarkEntity>>
     @Query("SELECT * FROM bookmarks") override suspend fun all(): List<BookmarkEntity>
+    @Query("DELETE FROM bookmarks WHERE source = :source AND animeId = :animeId")
+    override suspend fun delete(source: String, animeId: String)
     @Query("SELECT * FROM bookmarks WHERE source = :source AND animeId = :animeId")
     override suspend fun get(source: String, animeId: String): BookmarkEntity?
     @Query("SELECT * FROM bookmarks WHERE dirty = 1 ORDER BY updatedAt")

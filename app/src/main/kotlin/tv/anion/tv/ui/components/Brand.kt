@@ -43,13 +43,13 @@ fun BrandHeader(
         ) {
             Image(
                 painter = painterResource(R.drawable.anion_logo),
-                contentDescription = "anion",
+                contentDescription = "Anion",
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape),
             )
             Text(
-                "anion",
+                "Anion",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )

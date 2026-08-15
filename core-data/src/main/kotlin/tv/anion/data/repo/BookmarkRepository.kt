@@ -44,6 +44,9 @@ interface BookmarkRepository {
     suspend fun get(source: SourceId, animeId: String): Bookmark?
     suspend fun ensureWatching(seed: BookmarkSeed): Bookmark
     suspend fun advanceWatched(seed: BookmarkSeed, episode: Int): Bookmark
+    /** Статус, выбранный руками на карточке тайтла. */
+    suspend fun setKind(seed: BookmarkSeed, kind: BookmarkKind): Bookmark
+    suspend fun remove(source: SourceId, animeId: String): Bookmark?
     suspend fun dirty(): List<Bookmark>
     suspend fun mergeRemote(remote: Bookmark, pulledAt: Long)
     suspend fun markSynced(bookmark: Bookmark, serverId: String?): Boolean
@@ -70,6 +73,23 @@ class RoomBookmarkRepository(
         val kind = if (total > 0 && episode >= total) BookmarkKind.WATCHED
         else old?.kind?.let(BookmarkKind::fromWire) ?: BookmarkKind.WATCHING
         return write(seed.copy(totalEpisodes = total), episode, kind, old)
+    }
+
+    override suspend fun setKind(seed: BookmarkSeed, kind: BookmarkKind): Bookmark {
+        val old = store.get(seed.source.name, seed.animeId)
+        val watched = old?.watchedEpisodes ?: 0
+        val total = maxOf(seed.totalEpisodes, old?.totalEpisodes ?: 0)
+        return write(seed.copy(totalEpisodes = total), watched, kind, old)
+    }
+
+    /**
+     * Удаляем сразу локально, а серверу об этом сообщает [BookmarkSync]: строку
+     * нужно отдать ему вместе с `serverId`, иначе удалять на сайте будет нечего.
+     */
+    override suspend fun remove(source: SourceId, animeId: String): Bookmark? {
+        val old = store.get(source.name, animeId)?.toModel()
+        store.delete(source.name, animeId)
+        return old
     }
 
     private suspend fun write(seed: BookmarkSeed, watched: Int, kind: BookmarkKind, old: BookmarkEntity?): Bookmark {

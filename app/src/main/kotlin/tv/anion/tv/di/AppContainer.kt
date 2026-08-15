@@ -20,6 +20,7 @@ import tv.anion.data.sync.DefaultBookmarkSync
 import tv.anion.data.sync.HttpBookmarkRemote
 import tv.anion.data.sync.PlaybackProgressRecorder
 import tv.anion.data.sync.PreferencesSessionStore
+import tv.anion.data.sync.PreferencesSyncStateStore
 import tv.anion.player.ExoPlaybackController
 import tv.anion.player.PlaybackController
 import tv.anion.player.PlaybackProgressListener
@@ -52,14 +53,34 @@ class AppContainer(context: Context) {
     val searchHistory = RoomSearchHistoryRepository(database.searchHistory())
     private val sessions = PreferencesSessionStore(appContext)
     private val bookmarkRemote = HttpBookmarkRemote(http)
-    val bookmarkSync = DefaultBookmarkSync(bookmarks, bookmarkRemote, sessions, watchProgress)
+    val bookmarkSync = DefaultBookmarkSync(
+        bookmarks, bookmarkRemote, sessions, watchProgress, PreferencesSyncStateStore(appContext),
+    )
     val account = DefaultAccountRepository(bookmarkRemote, sessions)
     val progressRecorder = PlaybackProgressRecorder(
         applicationScope, watchProgress, bookmarks, bookmarkSync,
     )
 
     init {
-        if (account.signedIn.value) applicationScope.launch { runCatching { bookmarkSync.syncNow() } }
+        syncIfStale()
+    }
+
+    private var lastSyncAt = 0L
+
+    /**
+     * Синхронизация при каждом появлении приложения на экране, а не только при
+     * холодном старте: контейнер живёт вместе с процессом, и возврат из фона
+     * его `init` не вызывает — закладки, поставленные на сайте, приезжали бы
+     * только после перезапуска.
+     *
+     * Порог нужен, чтобы быстрый выход-возврат не устраивал шторм запросов.
+     */
+    fun syncIfStale() {
+        if (!account.signedIn.value) return
+        val now = System.currentTimeMillis()
+        if (now - lastSyncAt < MIN_SYNC_INTERVAL_MS) return
+        lastSyncAt = now
+        applicationScope.launch { runCatching { bookmarkSync.syncNow() } }
     }
 
     val resolver: StreamResolver = LocalKodikResolver(http)
@@ -99,6 +120,9 @@ class AppContainer(context: Context) {
     fun createPlayer(progress: PlaybackProgressListener? = null): PlaybackController =
         ExoPlaybackController(appContext, http, resolver, progress)
 }
+
+/** Минимальный интервал между автоматическими синхронизациями. */
+private const val MIN_SYNC_INTERVAL_MS = 60_000L
 
 val LocalAppContainer = staticCompositionLocalOf<AppContainer> {
     error("AppContainer не предоставлен")

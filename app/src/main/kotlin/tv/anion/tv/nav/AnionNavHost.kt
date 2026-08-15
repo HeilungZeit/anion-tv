@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import tv.anion.tv.ui.catalog.CatalogScreen
 import tv.anion.tv.ui.account.AccountScreen
+import tv.anion.tv.ui.bookmarks.BookmarksScreen
 import tv.anion.tv.ui.details.DetailsScreen
 import tv.anion.tv.ui.home.HomeScreen
 import tv.anion.tv.ui.player.PlayerScreen
@@ -22,6 +23,7 @@ sealed interface Route {
     data object Catalog : Route
     data object Search : Route
     data object Account : Route
+    data object Bookmarks : Route
     data class Details(val source: String, val animeId: String) : Route
     data class Player(
         val source: String,
@@ -63,6 +65,7 @@ fun AnionNavHost() {
             HomeScreen(
                 onOpenCatalog = { navigator.push(Route.Catalog) },
                 onOpenSearch = { navigator.push(Route.Search) },
+                onOpenBookmarks = { navigator.push(Route.Bookmarks) },
                 onOpenAccount = { navigator.push(Route.Account) },
                 onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
             )
@@ -74,6 +77,11 @@ fun AnionNavHost() {
         }
         Route.Search -> OverscanBox {
             SearchScreen(
+                onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
+            )
+        }
+        Route.Bookmarks -> OverscanBox {
+            BookmarksScreen(
                 onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
             )
         }

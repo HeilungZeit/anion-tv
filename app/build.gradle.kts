@@ -37,8 +37,11 @@ android {
     defaultConfig {
         applicationId = "tv.anion.tv"
         minSdk = 23
-        versionCode = System.getenv("ANION_VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = System.getenv("ANION_VERSION_NAME")?.takeIf(String::isNotBlank) ?: "0.1.0"
+        // На релизе версию задаёт тег: workflow считает их из vMAJOR.MINOR.PATCH
+        // по формуле major*1_000_000 + minor*1_000 + patch. Здесь те же числа
+        // для локальных сборок, чтобы отладочный APK не выглядел старее релиза.
+        versionCode = System.getenv("ANION_VERSION_CODE")?.toIntOrNull() ?: 1_000_000
+        versionName = System.getenv("ANION_VERSION_NAME")?.takeIf(String::isNotBlank) ?: "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

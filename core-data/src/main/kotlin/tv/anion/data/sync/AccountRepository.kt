@@ -24,10 +24,28 @@ class PreferencesSessionStore(context: Context) : SessionStore {
     private companion object { const val KEY = "session_id" }
 }
 
+/** Отметка последней удачной синхронизации переживает перезапуск приложения. */
+interface SyncStateStore {
+    fun read(): Long?
+    fun write(at: Long)
+}
+
+class PreferencesSyncStateStore(context: Context) : SyncStateStore {
+    private val preferences = context.applicationContext
+        .getSharedPreferences("anion_account", Context.MODE_PRIVATE)
+
+    override fun read(): Long? = preferences.getLong(KEY, 0L).takeIf { it > 0L }
+    override fun write(at: Long) { preferences.edit().putLong(KEY, at).apply() }
+
+    private companion object { const val KEY = "last_sync_at" }
+}
+
 interface AccountRepository {
     val signedIn: StateFlow<Boolean>
+    val profile: StateFlow<UserProfile?>
     suspend fun login(login: String, password: String)
-    fun logout()
+    suspend fun refreshProfile()
+    suspend fun logout()
 }
 
 class DefaultAccountRepository(
@@ -37,15 +55,27 @@ class DefaultAccountRepository(
     private val _signedIn = MutableStateFlow(sessions.read() != null)
     override val signedIn: StateFlow<Boolean> = _signedIn.asStateFlow()
 
+    private val _profile = MutableStateFlow<UserProfile?>(null)
+    override val profile: StateFlow<UserProfile?> = _profile.asStateFlow()
+
     override suspend fun login(login: String, password: String) {
         require(login.isNotBlank()) { "введите email или логин" }
         require(password.isNotBlank()) { "введите пароль" }
         sessions.write(api.login(login.trim(), password))
         _signedIn.value = true
+        refreshProfile()
     }
 
-    override fun logout() {
+    /** Профиль не критичен: сессия уже есть, а имя — украшение экрана. */
+    override suspend fun refreshProfile() {
+        val session = sessions.read() ?: return
+        _profile.value = runCatching { api.profile(session) }.getOrNull()
+    }
+
+    override suspend fun logout() {
+        sessions.read()?.let { api.logout(it) }
         sessions.write(null)
+        _profile.value = null
         _signedIn.value = false
     }
 }

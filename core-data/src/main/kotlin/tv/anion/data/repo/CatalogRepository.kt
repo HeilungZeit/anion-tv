@@ -52,12 +52,25 @@ private data class CachedAnime(
     val year: Int?,
     val posterUrl: String?,
     val thumbnailUrl: String?,
+    val score: Double? = null,
+    val status: String? = null,
+    val statusCode: String? = null,
+    val airedEpisodes: Int? = null,
+    val episodesTotal: Int? = null,
 )
 
 private fun Page<Anime>.toCache() = CachedPage(items.map { anime ->
-    CachedAnime(anime.id, anime.source.name, anime.title, anime.titleOriginal, anime.year, anime.posterUrl, anime.thumbnailUrl)
+    CachedAnime(
+        anime.id, anime.source.name, anime.title, anime.titleOriginal, anime.year,
+        anime.posterUrl, anime.thumbnailUrl, anime.score, anime.status,
+        anime.statusCode, anime.airedEpisodes, anime.episodesTotal,
+    )
 }, page, hasMore)
 
 private fun CachedPage.toModel() = Page(items.map { anime ->
-    Anime(anime.id, SourceId.valueOf(anime.source), anime.title, anime.titleOriginal, anime.year, anime.posterUrl, anime.thumbnailUrl)
+    Anime(
+        anime.id, SourceId.valueOf(anime.source), anime.title, anime.titleOriginal,
+        anime.year, anime.posterUrl, anime.thumbnailUrl, anime.score, anime.status,
+        anime.statusCode, anime.airedEpisodes, anime.episodesTotal,
+    )
 }, page, hasMore)

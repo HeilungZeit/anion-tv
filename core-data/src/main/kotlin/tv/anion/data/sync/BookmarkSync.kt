@@ -2,6 +2,9 @@ package tv.anion.data.sync
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
@@ -22,10 +25,24 @@ import tv.anion.source.SourceId
 import tv.anion.source.kodik.AnionGoApi
 import java.io.IOException
 
+/**
+ * Что показывать на экране аккаунта. Ошибку держим отдельно: все автоматические
+ * вызовы обёрнуты в runCatching и раньше глотали её молча — со стороны это
+ * выглядело как «всё хорошо», хотя сессия могла протухнуть.
+ */
+data class SyncState(
+    val lastSuccessAt: Long? = null,
+    val running: Boolean = false,
+    val error: String? = null,
+)
+
 interface BookmarkSync {
+    val state: StateFlow<SyncState>
     suspend fun pull()
     suspend fun pushDirty()
     suspend fun syncNow()
+    /** Убрать закладку и на сайте: локально её уже нет. */
+    suspend fun deleteRemote(bookmark: Bookmark)
 }
 
 class DefaultBookmarkSync(
@@ -33,9 +50,13 @@ class DefaultBookmarkSync(
     private val remote: BookmarkRemote,
     private val sessions: SessionStore,
     private val progress: WatchProgressRepository? = null,
+    private val syncState: SyncStateStore? = null,
     private val now: () -> Long = System::currentTimeMillis,
 ) : BookmarkSync {
     private val mutex = Mutex()
+
+    private val _state = MutableStateFlow(SyncState(lastSuccessAt = syncState?.read()))
+    override val state: StateFlow<SyncState> = _state.asStateFlow()
     override suspend fun pull() {
         val session = sessions.read() ?: return
         val pulledAt = now()
@@ -61,15 +82,38 @@ class DefaultBookmarkSync(
             }
     }
 
-    override suspend fun syncNow() = mutex.withLock {
-        // Сначала pull: dirty защищён от перезаписи, затем он отправляется наверх.
-        pull()
-        pushDirty()
+    override suspend fun deleteRemote(bookmark: Bookmark) {
+        val session = sessions.read() ?: return
+        val serverId = bookmark.serverId ?: return
+        runCatching { remote.delete(session, serverId) }
+    }
+
+    override suspend fun syncNow(): Unit = mutex.withLock {
+        if (sessions.read() == null) return@withLock
+        _state.value = _state.value.copy(running = true, error = null)
+        try {
+            // Сначала pull: dirty защищён от перезаписи, затем он отправляется наверх.
+            pull()
+            pushDirty()
+            val at = now()
+            syncState?.write(at)
+            _state.value = SyncState(lastSuccessAt = at, running = false, error = null)
+        } catch (error: Throwable) {
+            // Наружу пробрасываем как раньше — вызывающие сами решают, шуметь ли.
+            _state.value = _state.value.copy(running = false, error = error.message ?: "сбой синхронизации")
+            throw error
+        }
     }
 }
 
+/** Профиль пользователя с сайта — чтобы на ТВ было видно, под кем вошли. */
+data class UserProfile(val username: String, val email: String)
+
 interface BookmarkRemote {
     suspend fun login(login: String, password: String): String
+    suspend fun logout(sessionId: String)
+    suspend fun delete(sessionId: String, serverId: String)
+    suspend fun profile(sessionId: String): UserProfile
     suspend fun getAll(sessionId: String): List<Bookmark>
     suspend fun upsert(sessionId: String, bookmark: Bookmark): Bookmark
 }
@@ -84,6 +128,25 @@ class HttpBookmarkRemote(
         val response = request("$baseUrl/user/login", "POST", body.toString(), sessionId = null)
         return json.decodeFromString<LoginDto>(response).session
             .takeIf(String::isNotBlank) ?: error("сервер не вернул сессию")
+    }
+
+    /**
+     * Сессию гасит сервер: без этого запись в его таблице живёт ещё месяц, и
+     * «вышел на телевизоре» ничего не означало бы.
+     */
+    override suspend fun logout(sessionId: String) {
+        runCatching { request("$baseUrl/user/logout", "POST", "{}", sessionId) }
+    }
+
+    /** Удаление на сайте идёт по serverId, а не по animeId — так в роутере. */
+    override suspend fun delete(sessionId: String, serverId: String) {
+        request("$baseUrl/bookmarks/$serverId", "DELETE", null, sessionId)
+    }
+
+    override suspend fun profile(sessionId: String): UserProfile {
+        val body = request("$baseUrl/user", "GET", null, sessionId)
+        val dto = json.decodeFromString<UserDto>(body)
+        return UserProfile(username = dto.username, email = dto.email)
     }
 
     override suspend fun getAll(sessionId: String): List<Bookmark> {
@@ -143,6 +206,7 @@ class HttpBookmarkRemote(
 }
 
 @Serializable private data class LoginDto(val session: String)
+@Serializable private data class UserDto(val username: String = "", val email: String = "")
 @Serializable private data class BookmarksDto(
     val watching: List<RemoteBookmarkDto> = emptyList(),
     val willWatch: List<RemoteBookmarkDto> = emptyList(),
@@ -173,7 +237,7 @@ private fun RemoteBookmarkDto.toModel() = Bookmark(
     watchedEpisodes = watchedEpisodes,
     totalEpisodes = totalEpisodes,
     title = title,
-    posterUrl = poster.small.ifBlank { poster.medium.ifBlank { poster.big } },
+    posterUrl = poster.big.ifBlank { poster.fullsize.ifBlank { poster.medium.ifBlank { poster.small } } },
     animeStatus = animeStatus,
     // Сервер это поле не отдаёт; pull получает реальное время в конфликт-резолвере.
     updatedAt = 0,

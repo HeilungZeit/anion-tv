@@ -13,6 +13,12 @@ data class Anime(
     val posterUrl: String?,
     /** Мелкая картинка под размер плитки: оригиналы жрут память бокса (PLAN §6). */
     val thumbnailUrl: String?,
+    /** Метаданные карточки приходят вместе с фидом — без N+1 запросов деталей. */
+    val score: Double? = null,
+    val status: String? = null,
+    val statusCode: String? = null,
+    val airedEpisodes: Int? = null,
+    val episodesTotal: Int? = null,
 )
 
 data class AnimeDetails(

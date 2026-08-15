@@ -42,8 +42,8 @@ base64 -i anion-tv-release.jks | pbcopy
 Release workflow принимает строгие теги вида `vMAJOR.MINOR.PATCH`:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 Pipeline запускает тесты, собирает подписанные APK и AAB, проверяет подпись APK,

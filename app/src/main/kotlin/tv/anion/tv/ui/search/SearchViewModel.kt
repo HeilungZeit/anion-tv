@@ -51,9 +51,19 @@ class SearchViewModel(
             }.awaitAll()
             _state.value = _state.value.copy(
                 loading = false,
-                items = pages.flatten(),
+                // Один тайтл приходит из разных источников — ключи в сетке
+                // должны остаться уникальными.
+                items = pages.flatten().distinctBy { it.source to it.id },
             )
         }
+    }
+
+    /**
+     * Распознавание закрылось без результата: на ТВ это чаще всего молчание в
+     * микрофон или отказ в правах, и молча возвращаться в пустой экран нельзя.
+     */
+    fun voiceCancelled() {
+        _state.value = _state.value.copy(error = "Не расслышал. Повторите или наберите название на клавиатуре")
     }
 
     fun voiceUnavailable() {

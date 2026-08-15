@@ -81,6 +81,12 @@ class KodikSourceTest {
 
         assertEquals(3, page.items.size)
         assertTrue(page.items.all { it.title.isNotBlank() })
+        with(page.items.first()) {
+            assertEquals(9.46963562753033, score)
+            assertEquals("ongoing", statusCode)
+            assertEquals(6, airedEpisodes)
+            assertEquals(12, episodesTotal)
+        }
     }
 
     @Test
