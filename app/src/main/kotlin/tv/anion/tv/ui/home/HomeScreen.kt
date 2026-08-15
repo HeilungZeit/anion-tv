@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -27,6 +30,7 @@ import tv.anion.tv.di.LocalAppContainer
 import tv.anion.tv.ui.components.MessagePane
 import tv.anion.tv.ui.components.PosterCard
 import tv.anion.tv.ui.components.ContinueWatchingCard
+import tv.anion.tv.ui.components.centerFocusedItem
 import tv.anion.tv.ui.components.rowFocus
 import tv.anion.tv.ui.components.BrandHeader
 import tv.anion.tv.ui.components.HeaderAction
@@ -57,13 +61,27 @@ fun HomeScreen(
         return
     }
 
+    // Пустые ряды выкидываются до отрисовки: индекс в LazyColumn должен совпадать
+    // с позицией ряда, иначе центрируется не тот.
+    val rows = state.rows.filter { it.sourceId != null || it.items.isNotEmpty() }
+    val listState = rememberLazyListState()
+    var focusedRow by remember { mutableIntStateOf(-1) }
+
+    LaunchedEffect(focusedRow) {
+        if (focusedRow >= 0) listState.centerFocusedItem(focusedRow)
+    }
+
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         item {
-            BrandHeader {
+            // Шапку не центрируем — она и так вверху. Сброс нужен, чтобы
+            // возврат из шапки в тот же ряд снова его отцентрировал: без него
+            // индекс не менялся и эффект не срабатывал.
+            BrandHeader(Modifier.onFocusChanged { if (it.hasFocus) focusedRow = -1 }) {
                 HeaderAction(
                     label = "Каталог",
                     onClick = onOpenCatalog,
@@ -74,10 +92,13 @@ fun HomeScreen(
                 HeaderAction("Аккаунт", onOpenAccount)
             }
         }
-        state.rows.forEach { row ->
-            if (row.sourceId == null && row.items.isEmpty()) return@forEach
+        rows.forEachIndexed { rowIndex, row ->
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    // +1: нулевой элемент колонки — шапка.
+                    modifier = Modifier.onFocusChanged { if (it.hasFocus) focusedRow = rowIndex + 1 },
+                ) {
                     SectionHeader(row.title, Modifier.padding(top = 4.dp))
                     if (row.error != null) {
                         Text(row.error, style = MaterialTheme.typography.bodyMedium)

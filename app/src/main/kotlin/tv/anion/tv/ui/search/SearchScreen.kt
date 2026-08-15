@@ -22,11 +22,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -54,6 +57,7 @@ import tv.anion.tv.ui.components.PosterCard
 import tv.anion.tv.ui.components.ScreenHeader
 import tv.anion.tv.ui.components.SectionHeader
 import tv.anion.tv.ui.components.TvKeyboard
+import tv.anion.tv.ui.components.centerFocusedItem
 import tv.anion.tv.ui.components.initialFocus
 import tv.anion.tv.ui.components.rememberInitialFocus
 import tv.anion.tv.ui.components.rowFocus
@@ -72,6 +76,12 @@ fun SearchScreen(
     var keyboardOpen by remember { mutableStateOf(false) }
     val initial = rememberInitialFocus()
     val keyboardFocus = rememberInitialFocus(keyboardOpen)
+    val gridState = rememberLazyGridState()
+    var focusedItem by remember { mutableIntStateOf(-1) }
+
+    LaunchedEffect(focusedItem) {
+        if (focusedItem >= 0) gridState.centerFocusedItem(focusedItem)
+    }
 
     val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode != Activity.RESULT_OK) {
@@ -187,15 +197,22 @@ fun SearchScreen(
                 SectionHeader("Найдено  ·  ${state.items.size}")
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(160.dp),
+                    state = gridState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    items(state.items, key = { "${it.source}:${it.id}" }) { anime ->
+                    itemsIndexed(state.items, key = { _, it -> "${it.source}:${it.id}" }) { index, anime ->
                         PosterCard(
                             anime = anime,
                             onClick = { onOpenAnime(anime.source.name, anime.id) },
+                            // Ряд в фокусе уезжает на середину экрана: у нижнего
+                            // ряда иначе видно постер, но не название под ним.
+                            // hasFocus, а не isFocused: модификатор достаётся
+                            // внешней колонке карточки, фокус держит Surface
+                            // внутри неё.
+                            modifier = Modifier.onFocusChanged { if (it.hasFocus) focusedItem = index },
                         )
                     }
                 }

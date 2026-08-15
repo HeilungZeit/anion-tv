@@ -78,14 +78,21 @@ fun AnionBackground(content: @Composable BoxScope.() -> Unit) {
     }
 }
 
-/** 5% полей: часть телевизоров режет картинку по краям (PLAN Э4). Плеер — без них. */
+/**
+ * Поля под обрез телевизора (PLAN Э4). Плеер — без них.
+ *
+ * По вертикали поле вдвое уже горизонтального: одинаковые 5% съедали сверху и
+ * снизу по полосе в полсотни dp, экран выглядел зажатым, а ряд карточек терял
+ * ту самую высоту, из-за которой название под постером не помещалось. Режет
+ * телевизор в первую очередь бока, так что 5% оставлены там, где они и нужны.
+ */
 @Composable
 fun OverscanBox(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val safeTop = maxHeight * 0.05f
+        val safeTop = maxHeight * 0.025f
         Box(
             Modifier
                 .fillMaxSize()
@@ -99,7 +106,7 @@ fun OverscanBox(
             Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .height(safeTop + 42.dp)
+                .height(safeTop + 30.dp)
                 .background(
                     Brush.verticalGradient(
                         0f to Color(0xB8171A20),
