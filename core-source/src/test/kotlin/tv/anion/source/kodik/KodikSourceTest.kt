@@ -90,6 +90,40 @@ class KodikSourceTest {
     }
 
     @Test
+    fun `постеры не берутся в AVIF - его не декодирует Android до 12`() = runTest {
+        // Симптом на живом телевизоре: у карточек anion-go одни заглушки, при
+        // том что фон деталей и постеры AniLibria на том же экране рисуются.
+        val page = source.feed()
+
+        assertTrue(
+            page.items.none { it.posterUrl.orEmpty().endsWith(".avif") },
+            "AVIF в posterUrl: ${page.items.map { it.posterUrl }}",
+        )
+        assertTrue(
+            page.items.none { it.thumbnailUrl.orEmpty().endsWith(".avif") },
+            "AVIF в thumbnailUrl: ${page.items.map { it.thumbnailUrl }}",
+        )
+    }
+
+    @Test
+    fun `битый размер пропускается, а не выигрывает у следующего`() = runTest {
+        // Нормализатор anion-go приклеивает схему к чему угодно, включая пустое
+        // значение и путь от корня: в живом фиде так приезжает
+        // "https:/img/default-poster.jpg" (см. updates в aniongo-feed.json).
+        // Для `?:` это валидная строка, и она перебивала реальный URL следом.
+        val poster = PosterDto(
+            fullsize = "https:",
+            big = "https:/img/default-poster.jpg",
+            medium = "https://static.yani.tv/posters/medium/1.webp",
+            mega = "https://static.yani.tv/posters/mega/1.avif",
+        )
+
+        assertEquals("https://static.yani.tv/posters/medium/1.webp", poster.large())
+        assertEquals("https://static.yani.tv/posters/medium/1.webp", poster.thumb())
+        assertNull(PosterDto(fullsize = "https:").large())
+    }
+
+    @Test
     fun `детали лениво подключают AniLibria по alias из backend`() = runTest {
         val kodikResolver = RecordingResolver()
         val hybrid = KodikSource(FakeApi(), kodikResolver, AniLibriaSource(FakeAniLibriaApi()))

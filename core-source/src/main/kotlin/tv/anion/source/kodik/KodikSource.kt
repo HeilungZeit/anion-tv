@@ -73,7 +73,8 @@ class KodikSource(
             views = dto.views,
             studios = dto.studios.mapNotNull { it.title },
             otherTitles = dto.otherTitles.filter(String::isNotBlank),
-            backdropUrl = dto.randomScreenshots.firstNotNullOfOrNull { it.sizes?.full ?: it.sizes?.small },
+            backdropUrl = dto.randomScreenshots
+                .firstNotNullOfOrNull { firstImageUrl(it.sizes?.full, it.sizes?.small) },
         )
     }
 
@@ -161,8 +162,8 @@ class KodikSource(
         title = dto.title.orEmpty(),
         titleOriginal = dto.otherTitles.firstOrNull() ?: dto.original,
         year = dto.year,
-        posterUrl = dto.poster?.fullsize ?: dto.poster?.mega ?: dto.poster?.huge,
-        thumbnailUrl = dto.poster?.mega ?: dto.poster?.huge ?: dto.poster?.fullsize ?: dto.poster?.big,
+        posterUrl = dto.poster?.large(),
+        thumbnailUrl = dto.poster?.thumb(),
         score = dto.rating?.average,
         status = dto.animeStatus?.title,
         statusCode = dto.animeStatus?.alias,
@@ -176,8 +177,8 @@ class KodikSource(
         title = dto.title.orEmpty(),
         titleOriginal = dto.original,
         year = dto.year,
-        posterUrl = dto.poster?.fullsize ?: dto.poster?.mega ?: dto.poster?.huge,
-        thumbnailUrl = dto.poster?.mega ?: dto.poster?.huge ?: dto.poster?.fullsize ?: dto.poster?.big,
+        posterUrl = dto.poster?.large(),
+        thumbnailUrl = dto.poster?.thumb(),
         score = dto.rating?.average,
         status = dto.animeStatus?.title,
         statusCode = dto.animeStatus?.alias,
@@ -195,3 +196,35 @@ class KodikSource(
         )
     }
 }
+
+/**
+ * Постер под крупную плитку.
+ *
+ * Порядок размеров — не про качество, а про формат файла. `static.yani.tv`
+ * раздаёт `mega`/`huge` в **AVIF**, `big`/`small`/`medium` в WebP и только
+ * `fullsize` в JPEG. Android умеет декодировать AVIF с API 31, а `minSdk` у нас
+ * 23: на телевизоре постарше Coil молча не разворачивает такую картинку, и
+ * карточка остаётся с заглушкой. Симптом обманчивый — «не грузятся картинки
+ * только с нашего бэка», хотя фон деталей (скриншоты Kodik, JPEG) и постеры
+ * AniLibria (WebP) на том же экране рисуются.
+ *
+ * Поэтому AVIF стоит последним: на новых боксах до него очередь не доходит,
+ * на старых он и не нужен.
+ */
+internal fun PosterDto.large(): String? = firstImageUrl(fullsize, big, medium, mega, huge)
+
+/** Мелкая плитка: те же соображения по формату, но начиная с меньших размеров. */
+internal fun PosterDto.thumb(): String? = firstImageUrl(big, medium, small, fullsize, mega, huge)
+
+/**
+ * Первый пригодный к загрузке адрес.
+ *
+ * Недостающий размер бэк отдаёт не как `null`, а строкой: нормализатор anion-go
+ * приклеивает схему к чему угодно, и в живом фиде приезжает
+ * `"https:/img/default-poster.jpg"` (заглушка) или голое `"https:"`. Для `?:`
+ * это валидное значение, и оно выигрывало у настоящего URL, стоящего следом.
+ */
+private fun firstImageUrl(vararg candidates: String?): String? = candidates
+    .asSequence()
+    .mapNotNull { it?.trim() }
+    .firstOrNull { it.startsWith("https://") || it.startsWith("http://") }
