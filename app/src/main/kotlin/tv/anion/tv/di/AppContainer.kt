@@ -15,6 +15,7 @@ import tv.anion.data.repo.CachedAnimeSource
 import tv.anion.data.repo.RoomBookmarkRepository
 import tv.anion.data.repo.RoomSearchHistoryRepository
 import tv.anion.data.repo.RoomWatchProgressRepository
+import tv.anion.data.sync.ClientInfo
 import tv.anion.data.sync.DefaultAccountRepository
 import tv.anion.data.sync.DefaultBookmarkSync
 import tv.anion.data.sync.HttpBookmarkRemote
@@ -52,7 +53,7 @@ class AppContainer(context: Context) {
     val bookmarks = RoomBookmarkRepository(database.bookmarks())
     val searchHistory = RoomSearchHistoryRepository(database.searchHistory())
     private val sessions = PreferencesSessionStore(appContext)
-    private val bookmarkRemote = HttpBookmarkRemote(http)
+    private val bookmarkRemote = HttpBookmarkRemote(http, clientInfo = ClientInfo.current())
     val bookmarkSync = DefaultBookmarkSync(
         bookmarks, bookmarkRemote, sessions, watchProgress, PreferencesSyncStateStore(appContext),
     )

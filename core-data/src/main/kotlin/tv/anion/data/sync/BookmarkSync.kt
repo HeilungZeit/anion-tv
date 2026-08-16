@@ -121,6 +121,7 @@ interface BookmarkRemote {
 class HttpBookmarkRemote(
     private val http: OkHttpClient,
     private val baseUrl: String = AnionGoApi.BASE_URL,
+    private val clientInfo: ClientInfo = ClientInfo.TV,
 ) : BookmarkRemote {
     override suspend fun login(login: String, password: String): String {
         val key = if ('@' in login) "email" else "username"
@@ -180,6 +181,9 @@ class HttpBookmarkRemote(
             val builder = Request.Builder().url(url)
                 .header(AnionGoApi.CLIENT_HEADER, AnionGoApi.CLIENT_VALUE)
                 .header("Accept", "application/json")
+                .header("X-Client-Platform", clientInfo.platform)
+                .header("X-Client-OS", clientInfo.os)
+                .header("X-Device-Name", clientInfo.deviceName)
             if (sessionId != null) builder.header("Cookie", "X-Session-ID=$sessionId")
             val requestBody = body?.toRequestBody(JSON_MEDIA_TYPE)
             when (method) {
