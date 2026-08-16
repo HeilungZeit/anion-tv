@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
@@ -48,6 +49,23 @@ import tv.anion.source.model.Anime
 import tv.anion.tv.R
 import java.util.Locale
 
+/**
+ * Ширина плитки. Полный след в разметке — [CARD_FOOTPRINT]: на него настраивают
+ * `GridCells.Adaptive`, иначе плитка не влезет в ячейку сетки.
+ */
+private val CARD_WIDTH = 144.dp
+
+/**
+ * Запас вокруг плитки под её увеличение в фокусе — с избытком, на плитку до
+ * 240×400dp. Прокрутки он больше не касается (её держит неизменный размер
+ * фокусируемого узла), но нужен, чтобы увеличенную плитку не срезал viewport
+ * ряда или сетки: они клипуют содержимое по своим границам.
+ */
+private val FOCUS_INSET_H = 6.dp
+private val FOCUS_INSET_V = 10.dp
+
+val CARD_FOOTPRINT = CARD_WIDTH + FOCUS_INSET_H * 2
+
 @Composable
 fun PosterCard(
     anime: Anime,
@@ -65,34 +83,59 @@ fun PosterCard(
     )
     val shape = RoundedCornerShape(12.dp)
 
-    Column(
-        modifier = modifier
-            .width(160.dp)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .onFocusChanged { focused = it.hasFocus },
+    // Фокус держит вся плитка целиком, вместе с подписью, и её размер от фокуса
+    // не меняется: увеличение живёт на содержимом внутри.
+    //
+    // Так сделано не для красоты. Прокрутка по фокусу тянет в кадр границы
+    // сфокусированного узла — а `graphicsLayer` эти границы меняет. Пока
+    // увеличение висело на самом узле, его размер менялся все 180 мс анимации, и
+    // список подкручивался вслед за ним каждый кадр: экран полз и дёргался. А
+    // пока фокус держал один постер, без подписи, в кадр тянуло только постер —
+    // название под ним оставалось срезанным, и это лечили отдельной доводкой,
+    // которая скроллила вторым заходом поверх штатной. Теперь узел неподвижен и
+    // включает подпись: штатной прокрутки достаточно, и она одна.
+    Surface(
+        onClick = onClick,
+        modifier = modifier.onFocusChanged { focused = it.isFocused },
+        shape = ClickableSurfaceDefaults.shape(RectangleShape, RectangleShape),
+        // Подложки у плитки нет — её рисует сам постер, а под подписью должен
+        // остаться фон экрана.
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent,
+            pressedContainerColor = Color.Transparent,
+            contentColor = Color.White,
+            focusedContentColor = Color.White,
+            pressedContentColor = Color.White,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
-        // Обводка фокуса рисуется снаружи постера, с зазором — так её описывают
-        // гайдлайны (outline width + outline inset), и так она видна на кадре
-        // любой яркости. Белая, а не брендовая: на постерах с синим небом
-        // синяя рамка терялась.
-        Box(
+        Column(
             Modifier
-                .fillMaxWidth()
-                .border(
-                    width = if (focused) 3.dp else 0.dp,
-                    color = if (focused) Color.White else Color.Transparent,
-                    shape = RoundedCornerShape(16.dp),
-                )
-                .padding(4.dp),
+                .padding(horizontal = FOCUS_INSET_H, vertical = FOCUS_INSET_V)
+                .width(CARD_WIDTH)
+                .graphicsLayer { scaleX = scale; scaleY = scale },
         ) {
-            Surface(
-                onClick = onClick,
-                scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
-                modifier = Modifier
-                    .aspectRatio(5f / 7f)
-                    .clip(shape),
+            // Обводка фокуса рисуется снаружи постера, с зазором — так её описывают
+            // гайдлайны (outline width + outline inset), и так она видна на кадре
+            // любой яркости. Белая, а не брендовая: на постерах с синим небом
+            // синяя рамка терялась.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = if (focused) 3.dp else 0.dp,
+                        color = if (focused) Color.White else Color.Transparent,
+                        shape = RoundedCornerShape(16.dp),
+                    )
+                    .padding(4.dp),
             ) {
-                Box(Modifier.fillMaxSize()) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(5f / 7f)
+                        .clip(shape),
+                ) {
                     StablePosterImage(
                         // Крупный постер первым: миниатюра рассчитана на список из
                         // мелких плиток, а на 4K-экране одна плитка — это сотни
@@ -126,43 +169,43 @@ fun PosterCard(
                     }
                 }
             }
-        }
-        // Подпись выровнена по постеру, а не по обводке: блок текста должен
-        // совпадать по ширине с картинкой (гайдлайны по анатомии карточки),
-        // поэтому здесь тот же отступ 4dp, что и у зазора под обводку.
-        Column(Modifier.padding(horizontal = 4.dp)) {
-            Spacer(Modifier.height(7.dp))
-            // Название и метаданные намеренно находятся в одном блоке: Material TV
-            // добавлял между отдельными слотами слишком большой системный отступ.
-            Box(Modifier.height(38.dp)) {
-                Text(
-                    anime.title,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    // Белый и в фокусе, и без него: цветное название прыгало
-                    // вместе с обводкой и читалось как второй акцент.
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    lineHeight = 18.sp,
-                )
-            }
-            Spacer(Modifier.height(2.dp))
-            if (showFeedMetadata) {
-                FeedCardSubtitle(anime)
-            } else {
-                Text(
-                    listOfNotNull(
-                        anime.year?.toString(),
-                        when (anime.source) {
-                            SourceId.ANILIBRIA -> "AniLibria"
-                            SourceId.KODIK -> "anion"
-                        },
-                    ).joinToString("  •  "),
-                    maxLines = 1,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelSmall,
-                )
+            // Подпись выровнена по постеру, а не по обводке: блок текста должен
+            // совпадать по ширине с картинкой (гайдлайны по анатомии карточки),
+            // поэтому здесь тот же отступ 4dp, что и у зазора под обводку.
+            Column(Modifier.padding(horizontal = 4.dp)) {
+                Spacer(Modifier.height(7.dp))
+                // Название и метаданные намеренно находятся в одном блоке: Material TV
+                // добавлял между отдельными слотами слишком большой системный отступ.
+                Box(Modifier.height(38.dp)) {
+                    Text(
+                        anime.title,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        // Белый и в фокусе, и без него: цветное название прыгало
+                        // вместе с обводкой и читалось как второй акцент.
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                if (showFeedMetadata) {
+                    FeedCardSubtitle(anime)
+                } else {
+                    Text(
+                        listOfNotNull(
+                            anime.year?.toString(),
+                            when (anime.source) {
+                                SourceId.ANILIBRIA -> "AniLibria"
+                                SourceId.KODIK -> "Anion"
+                            },
+                        ).joinToString("  •  "),
+                        maxLines = 1,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
             }
         }
     }
@@ -269,30 +312,54 @@ fun ContinueWatchingCard(
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(14.dp)
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.045f else 1f,
+        animationSpec = tween(180),
+        label = "continue-focus",
+    )
+
+    // Размер поверхности от фокуса не зависит, увеличение — на содержимом
+    // внутри: прокрутка по фокусу тянет в кадр границы сфокусированного узла, и
+    // меняющийся размер заставлял ряд ползти за ним всю анимацию. Подложка
+    // уехала внутрь по той же причине — она обязана увеличиваться вместе с
+    // содержимым, иначе фон отстаёт от текста.
     Surface(
         onClick = onClick,
-        modifier = modifier
-            .width(320.dp)
-            .height(126.dp),
-        shape = ClickableSurfaceDefaults.shape(shape = shape, focusedShape = shape),
+        modifier = modifier.onFocusChanged { focused = it.isFocused },
+        shape = ClickableSurfaceDefaults.shape(RectangleShape, RectangleShape),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent,
+            pressedContainerColor = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
             focusedContentColor = MaterialTheme.colorScheme.onSurface,
+            pressedContentColor = MaterialTheme.colorScheme.onSurface,
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.045f),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier
+                .padding(horizontal = FOCUS_INSET_H, vertical = FOCUS_INSET_V)
+                .width(288.dp)
+                .height(114.dp)
+                .graphicsLayer { scaleX = scale; scaleY = scale }
+                .clip(shape)
+                .background(
+                    if (focused) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.surfaceVariant,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             StablePosterImage(
                 url = anime.thumbnailUrl ?: anime.posterUrl,
                 title = anime.title,
                 widthPx = 270,
                 heightPx = 378,
                 modifier = Modifier
-                    // Карточка высотой 126.dp: 90 × 126 сохраняет постерные 5:7,
+                    // Карточка высотой 114.dp: 82 × 114 сохраняет постерные 5:7,
                     // поэтому ContentScale.Crop больше не отрезает верх и низ.
-                    .width(90.dp)
+                    .width(82.dp)
                     .fillMaxHeight(),
             )
             Column(
@@ -317,7 +384,7 @@ fun ContinueWatchingCard(
                 Text(
                     when (anime.source) {
                         SourceId.ANILIBRIA -> "AniLibria"
-                        SourceId.KODIK -> "anion"
+                        SourceId.KODIK -> "Anion"
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -33,12 +34,16 @@ import tv.anion.data.repo.BookmarkKind
 import tv.anion.data.repo.BookmarkRepository
 import tv.anion.source.model.Anime
 import tv.anion.tv.di.LocalAppContainer
+import tv.anion.tv.ui.components.CARD_FOOTPRINT
 import tv.anion.tv.ui.components.MessagePane
 import tv.anion.tv.ui.components.PosterCard
 import tv.anion.tv.ui.components.ScreenHeader
 import tv.anion.tv.ui.components.initialFocus
 import tv.anion.tv.ui.components.rememberInitialFocus
 import tv.anion.tv.ui.components.rowFocus
+import tv.anion.tv.ui.theme.ScreenBottomGutter
+import tv.anion.tv.ui.theme.ScreenGutter
+import tv.anion.tv.ui.theme.ScreenTopGutter
 
 /** Порядок вкладок повторяет сайт, чтобы привычка переносилась с веба на ТВ. */
 private val TABS = listOf(
@@ -75,14 +80,21 @@ fun BookmarksScreen(onOpenAnime: (source: String, animeId: String) -> Unit) {
     var tab by remember { mutableStateOf(BookmarkKind.WATCHING) }
     val items = remember(state.all, tab) { state.all.filter { it.kind == tab } }
     val initial = rememberInitialFocus()
-
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        ScreenHeader("Закладки", "То же, что на сайте: статусы и просмотренные серии")
+        ScreenHeader(
+            title = "Закладки",
+            subtitle = "То же, что на сайте: статусы и просмотренные серии",
+            modifier = Modifier.padding(
+                start = ScreenGutter,
+                end = ScreenGutter,
+                top = ScreenTopGutter,
+            ),
+        )
 
         LazyRow(
             modifier = Modifier.rowFocus(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+            contentPadding = PaddingValues(horizontal = ScreenGutter, vertical = 10.dp),
         ) {
             items(TABS, key = { it.first.name }) { (kind, label) ->
                 val count = state.all.count { it.kind == kind }
@@ -99,11 +111,19 @@ fun BookmarksScreen(onOpenAnime: (source: String, animeId: String) -> Unit) {
             !signedIn -> MessagePane("Войдите в аккаунт — закладки подтянутся с сайта")
             items.isEmpty() -> MessagePane("Здесь пусто. Добавьте тайтл с его страницы")
             else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(160.dp),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                columns = GridCells.Adaptive(CARD_FOOTPRINT),
+                // Остаток экрана сетке отдаёт weight: прокрутка по фокусу
+                // считает видимой областью viewport сетки, и он должен
+                // совпадать с экраном.
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    start = ScreenGutter,
+                    end = ScreenGutter,
+                    top = 8.dp,
+                    bottom = ScreenBottomGutter,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 itemsIndexed(items, key = { _, item -> "${item.source}:${item.animeId}" }) { _, item ->
                     PosterCard(

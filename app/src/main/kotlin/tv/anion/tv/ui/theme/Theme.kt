@@ -3,7 +3,6 @@ package tv.anion.tv.ui.theme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -75,26 +74,23 @@ fun AnionBackground(content: @Composable BoxScope.() -> Unit) {
 }
 
 /**
- * Поля под обрез телевизора (PLAN Э4). Плеер — без них.
+ * Отступ контента от края экрана.
  *
- * Числа взяты из гайдлайнов Android TV (Styles → Layouts): safe area — 48dp по
- * бокам и 24–27dp сверху и снизу. Раньше здесь стояли одинаковые 5% от стороны:
- * по горизонтали это те же 48dp и было верно, а по вертикали давало столько же,
- * втрое больше нужного, — экран выглядел зажатым сверху и снизу.
+ * Полей под обрез (safe area в 48dp по бокам из гайдлайнов) больше нет: их
+ * держал общий контейнер вокруг каждого экрана, и он же не давал рельсу
+ * навигации прижаться к краю — тот висел в 48dp от рамки, чего не делает ни
+ * одно ТВ-приложение. Резать картинку по краям умеют ЭЛТ, а не панели, ради
+ * которых пишется это приложение.
  *
- * Градиентной «кромки» сверху больше нет: полоса в семь десятков dp и была тем,
- * что читалось как громоздкая рамка. Фон приложения и так тёмный, отделять
- * контент от края нечем.
+ * Оставшийся гаттер держится не под обрез, а под саму разметку: тексту нужен
+ * отбив от рамки, а плитке в фокусе — место под обводку и scale, потому что
+ * ряды и сетки клипуют содержимое по своему viewport. Рельс и ряды карточек его
+ * не берут: рельс стоит вплотную к краю, ряды обязаны уезжать за край.
  */
-@Composable
-fun OverscanBox(
-    modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    Box(
-        modifier
-            .fillMaxSize()
-            .padding(horizontal = 48.dp, vertical = 24.dp),
-        content = content,
-    )
-}
+val ScreenGutter = 24.dp
+
+/** Сверху меньше горизонтального: шапка не должна съедать высоту первого ряда. */
+val ScreenTopGutter = 16.dp
+
+/** Снизу — запас на увеличение последней строки в фокусе. */
+val ScreenBottomGutter = 24.dp

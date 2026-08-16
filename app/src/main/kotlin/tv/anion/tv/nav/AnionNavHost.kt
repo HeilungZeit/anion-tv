@@ -11,7 +11,6 @@ import tv.anion.tv.ui.details.DetailsScreen
 import tv.anion.tv.ui.home.HomeScreen
 import tv.anion.tv.ui.player.PlayerScreen
 import tv.anion.tv.ui.search.SearchScreen
-import tv.anion.tv.ui.theme.OverscanBox
 
 /**
  * Экраны: Home → Catalog → Details → Player, плюс Search.
@@ -60,43 +59,36 @@ fun AnionNavHost() {
     val navigator = remember { Navigator() }
     BackHandler(enabled = navigator.canPop) { navigator.pop() }
 
+    // Общей рамки у экранов нет: каждый рисует во весь экран и сам отмеряет
+    // отступы от края через ScreenGutter. Рельс навигации и ряды карточек
+    // обязаны доходить до самого края, а хост про это ничего не знает.
     when (val route = navigator.current) {
-        Route.Home -> OverscanBox {
-            HomeScreen(
-                onOpenCatalog = { navigator.push(Route.Catalog) },
-                onOpenSearch = { navigator.push(Route.Search) },
-                onOpenBookmarks = { navigator.push(Route.Bookmarks) },
-                onOpenAccount = { navigator.push(Route.Account) },
-                onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
-            )
-        }
-        Route.Catalog -> OverscanBox {
-            CatalogScreen(
-                onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
-            )
-        }
-        Route.Search -> OverscanBox {
-            SearchScreen(
-                onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
-            )
-        }
-        Route.Bookmarks -> OverscanBox {
-            BookmarksScreen(
-                onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
-            )
-        }
-        Route.Account -> OverscanBox { AccountScreen() }
-        is Route.Details -> OverscanBox {
-            DetailsScreen(
-                source = route.source,
-                animeId = route.animeId,
-                onPlay = { episode, translationId ->
-                    navigator.push(
-                        Route.Player(route.source, route.animeId, episode, translationId),
-                    )
-                },
-            )
-        }
+        Route.Home -> HomeScreen(
+            onOpenCatalog = { navigator.push(Route.Catalog) },
+            onOpenSearch = { navigator.push(Route.Search) },
+            onOpenBookmarks = { navigator.push(Route.Bookmarks) },
+            onOpenAccount = { navigator.push(Route.Account) },
+            onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
+        )
+        Route.Catalog -> CatalogScreen(
+            onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
+        )
+        Route.Search -> SearchScreen(
+            onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
+        )
+        Route.Bookmarks -> BookmarksScreen(
+            onOpenAnime = { source, id -> navigator.push(Route.Details(source, id)) },
+        )
+        Route.Account -> AccountScreen()
+        is Route.Details -> DetailsScreen(
+            source = route.source,
+            animeId = route.animeId,
+            onPlay = { episode, translationId ->
+                navigator.push(
+                    Route.Player(route.source, route.animeId, episode, translationId),
+                )
+            },
+        )
         is Route.Player -> PlayerScreen(
             source = route.source,
             animeId = route.animeId,

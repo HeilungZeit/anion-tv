@@ -49,6 +49,9 @@ import tv.anion.tv.ui.components.ScreenHeader
 import tv.anion.tv.ui.components.TvKeyboard
 import tv.anion.tv.ui.components.initialFocus
 import tv.anion.tv.ui.components.rememberInitialFocus
+import tv.anion.tv.ui.theme.ScreenBottomGutter
+import tv.anion.tv.ui.theme.ScreenGutter
+import tv.anion.tv.ui.theme.ScreenTopGutter
 
 data class AccountUiState(
     val signedIn: Boolean = false,
@@ -123,7 +126,18 @@ fun AccountScreen() {
 
     BackHandler(enabled = editing != Field.None) { editing = Field.None }
 
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    // Экран не скроллится — поля от края даёт обычный padding, а не contentPadding.
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(
+                start = ScreenGutter,
+                end = ScreenGutter,
+                top = ScreenTopGutter,
+                bottom = ScreenBottomGutter,
+            ),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
         if (state.signedIn) {
             ScreenHeader("Аккаунт", "Просмотренное и закладки синхронизируются с сайтом")
             SignedIn(

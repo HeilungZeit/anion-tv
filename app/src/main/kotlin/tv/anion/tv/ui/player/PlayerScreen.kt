@@ -59,7 +59,7 @@ import tv.anion.player.RemoteKeyMap
 import tv.anion.source.SourceId
 import tv.anion.tv.di.LocalAppContainer
 import tv.anion.tv.ui.components.MessagePane
-import tv.anion.tv.ui.theme.OverscanBox
+import tv.anion.tv.ui.theme.ScreenGutter
 
 @Composable
 fun PlayerScreen(
@@ -303,57 +303,63 @@ private fun PlayerPanel(
                 )
             )
     ) {
-        OverscanBox {
-            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
-                if (title != null) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
+        // Панель прижата к низу кадра. Отступы — те же, что у контентных
+        // экранов, только по вертикали меньше: полей под обрез у плеера не было
+        // и раньше, а кадр под панелью важнее лишних dp пустоты.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = ScreenGutter, vertical = PANEL_EDGE),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
+            if (title != null) {
                 Text(
-                    buildString {
-                        append("Серия $episode")
-                        if (total > 0) append(" из $total")
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(18.dp))
-                ProgressBar(positionMs, durationMs, onFocusChanged = onSeekBarFocusChanged)
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(formatMs(positionMs), style = MaterialTheme.typography.labelLarge)
-                    // Остаток нагляднее полной длительности: он отвечает на
-                    // вопрос «успею ли досмотреть».
-                    Text(
-                        "−" + formatMs((durationMs - positionMs).coerceAtLeast(0)),
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-
-                Spacer(Modifier.height(22.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PanelButton("− 10 с", onClick = { onSeek(-RemoteKeyMap.SEEK_STEP_MS) })
-                    PanelButton(
-                        text = if (isPlaying) "Пауза" else "Продолжить",
-                        onClick = onPlayPause,
-                        modifier = Modifier.focusRequester(playFocus),
-                        icon = { tint -> TransportIcon(playing = isPlaying, tint = tint, size = 18.dp) },
-                    )
-                    PanelButton("+ 10 с", onClick = { onSeek(RemoteKeyMap.SEEK_STEP_MS) })
-                    if (canSkip) PanelButton("Пропустить опенинг", onSkip)
-                }
-
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "OK — пауза   ·   ← → — перемотка   ·   Назад — выйти",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.55f),
+                    title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
+            Text(
+                buildString {
+                    append("Серия $episode")
+                    if (total > 0) append(" из $total")
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(18.dp))
+            ProgressBar(positionMs, durationMs, onFocusChanged = onSeekBarFocusChanged)
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(formatMs(positionMs), style = MaterialTheme.typography.labelLarge)
+                // Остаток нагляднее полной длительности: он отвечает на
+                // вопрос «успею ли досмотреть».
+                Text(
+                    "−" + formatMs((durationMs - positionMs).coerceAtLeast(0)),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+
+            Spacer(Modifier.height(22.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                PanelButton("− 10 с", onClick = { onSeek(-RemoteKeyMap.SEEK_STEP_MS) })
+                PanelButton(
+                    text = if (isPlaying) "Пауза" else "Продолжить",
+                    onClick = onPlayPause,
+                    modifier = Modifier.focusRequester(playFocus),
+                    icon = { tint -> TransportIcon(playing = isPlaying, tint = tint, size = 18.dp) },
+                )
+                PanelButton("+ 10 с", onClick = { onSeek(RemoteKeyMap.SEEK_STEP_MS) })
+                if (canSkip) PanelButton("Пропустить опенинг", onSkip)
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "OK — пауза   ·   ← → — перемотка   ·   Назад — выйти",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = 0.55f),
+            )
         }
     }
 }
@@ -477,6 +483,9 @@ private fun Pill(text: String) {
 }
 
 private const val OVERLAY_TIMEOUT_MS = 7_000L
+
+/** Отступ панели от краёв кадра: по вертикали меньше гаттера — кадр важнее. */
+private val PANEL_EDGE = 20.dp
 
 private fun formatMs(ms: Long): String {
     if (ms <= 0) return "0:00"

@@ -68,6 +68,8 @@ import tv.anion.tv.ui.components.SectionHeader
 import tv.anion.tv.ui.components.StablePosterImage
 import tv.anion.tv.ui.components.initialFocus
 import tv.anion.tv.ui.components.rememberInitialFocus
+import tv.anion.tv.ui.theme.ScreenBottomGutter
+import tv.anion.tv.ui.theme.ScreenGutter
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -105,7 +107,7 @@ fun DetailsScreen(
         runCatching { listState.scrollToItem(0) }
         if (state.episodes.isNotEmpty()) {
             // requestFocus сам вызывает bringIntoView и раньше утягивал верх hero
-            // за safe area. Фокусируем только после layout и возвращаем item в 0.
+            // за край экрана. Фокусируем только после layout и возвращаем item в 0.
             withFrameNanos { }
             runCatching { initial.requestFocus() }
             withFrameNanos { }
@@ -124,9 +126,16 @@ fun DetailsScreen(
                 modifier = Modifier.fillMaxSize(),
                 state = listState,
                 verticalArrangement = Arrangement.spacedBy(18.dp),
-                // Фокус главной кнопки просит небольшой bring-into-view.
-                // Верхний запас поглощает этот сдвиг, не обрезая углы hero.
-                contentPadding = PaddingValues(top = 32.dp, bottom = 28.dp),
+                // Поля от края экрана отмеряет сам список: общей рамки вокруг
+                // экранов больше нет. Сверху запас больше гаттера — фокус
+                // главной кнопки просит небольшой bring-into-view, и этот запас
+                // поглощает сдвиг, не обрезая углы hero.
+                contentPadding = PaddingValues(
+                    start = ScreenGutter,
+                    end = ScreenGutter,
+                    top = 28.dp,
+                    bottom = ScreenBottomGutter,
+                ),
             ) {
                 item {
                     val resume = state.resume?.takeIf { point ->

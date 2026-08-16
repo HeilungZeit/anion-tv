@@ -22,14 +22,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -52,15 +50,17 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import tv.anion.tv.R
 import tv.anion.tv.di.LocalAppContainer
+import tv.anion.tv.ui.components.CARD_FOOTPRINT
 import tv.anion.tv.ui.components.MessagePane
 import tv.anion.tv.ui.components.PosterCard
-import tv.anion.tv.ui.components.ScreenHeader
 import tv.anion.tv.ui.components.SectionHeader
 import tv.anion.tv.ui.components.TvKeyboard
-import tv.anion.tv.ui.components.centerFocusedItem
 import tv.anion.tv.ui.components.initialFocus
 import tv.anion.tv.ui.components.rememberInitialFocus
 import tv.anion.tv.ui.components.rowFocus
+import tv.anion.tv.ui.theme.ScreenBottomGutter
+import tv.anion.tv.ui.theme.ScreenGutter
+import tv.anion.tv.ui.theme.ScreenTopGutter
 
 /** Одна высота на кнопку, поле и «Найти»: разнобой сразу бросается в глаза. */
 private val CONTROL_HEIGHT = 46.dp
@@ -76,12 +76,6 @@ fun SearchScreen(
     var keyboardOpen by remember { mutableStateOf(false) }
     val initial = rememberInitialFocus()
     val keyboardFocus = rememberInitialFocus(keyboardOpen)
-    val gridState = rememberLazyGridState()
-    var focusedItem by remember { mutableIntStateOf(-1) }
-
-    LaunchedEffect(focusedItem) {
-        if (focusedItem >= 0) gridState.centerFocusedItem(focusedItem)
-    }
 
     val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode != Activity.RESULT_OK) {
@@ -116,13 +110,20 @@ fun SearchScreen(
 
     BackHandler(enabled = keyboardOpen) { keyboardOpen = false }
 
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        ScreenHeader("Поиск", "Скажите название голосом или наберите с пульта")
-
+    // Поля от края экрана экран отмеряет сам: общей рамки вокруг экранов нет.
+    //
+    // Вертикаль на экране поиска — самый дорогой ресурс, и раздаётся она сверху
+    // вниз по важности: строка запроса, счётчик, дальше всё оставшееся место
+    // забирает сетка. Крупного заголовка «Поиск» с подписью здесь больше нет:
+    // вместе с историей запросов он съедал половину экрана, из-за чего у
+    // единственного видимого ряда результатов срезало названия под постерами.
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = ScreenGutter, end = ScreenGutter, top = ScreenTopGutter),
         ) {
             VoiceButton(
                 onClick = ::startVoice,
@@ -156,6 +157,7 @@ fun SearchScreen(
 
         if (keyboardOpen) {
             TvKeyboard(
+                modifier = Modifier.padding(horizontal = ScreenGutter),
                 onKey = { query += it },
                 onBackspace = { query = query.dropLast(1) },
                 onClear = { query = "" },
@@ -167,18 +169,22 @@ fun SearchScreen(
             )
             Text(
                 "Назад — убрать клавиатуру",
+                modifier = Modifier.padding(horizontal = ScreenGutter),
                 style = MaterialTheme.typography.labelMedium,
                 color = Color.White.copy(alpha = 0.5f),
             )
             return@Column
         }
 
-        if (state.history.isNotEmpty()) {
-            SectionHeader("Недавние запросы")
+        // История — только пока результатов нет: до первого запроса и когда
+        // ничего не нашлось. Над найденным она висела всегда и отнимала у сетки
+        // ряд целиком, а нужна ровно тогда, когда показывать больше нечего.
+        if (state.items.isEmpty() && !state.loading && state.history.isNotEmpty()) {
+            SectionHeader("Недавние запросы", Modifier.padding(horizontal = ScreenGutter))
             LazyRow(
                 modifier = Modifier.rowFocus(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                contentPadding = PaddingValues(horizontal = ScreenGutter, vertical = 10.dp),
             ) {
                 items(state.history, key = { it }) { item ->
                     HistoryChip(item) {
@@ -194,25 +200,33 @@ fun SearchScreen(
             state.error != null -> MessagePane(state.error!!)
             state.searched && state.items.isEmpty() -> MessagePane("Ничего не нашлось")
             state.items.isNotEmpty() -> {
-                SectionHeader("Найдено  ·  ${state.items.size}")
+                Text(
+                    "Найдено  ·  ${state.items.size}",
+                    modifier = Modifier.padding(horizontal = ScreenGutter),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White.copy(alpha = 0.6f),
+                )
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(160.dp),
-                    state = gridState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    columns = GridCells.Adaptive(CARD_FOOTPRINT),
+                    // Остаток экрана сетке отдаёт weight: прокрутка по фокусу
+                    // считает видимой областью viewport сетки, и он обязан
+                    // совпадать с экраном. fillMaxSize просил бы максимум по
+                    // входящим ограничениям и держался на том, что Column их
+                    // урежет, — полагаться тут на побочный эффект не стоит.
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(
+                        start = ScreenGutter,
+                        end = ScreenGutter,
+                        top = 4.dp,
+                        bottom = ScreenBottomGutter,
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    itemsIndexed(state.items, key = { _, it -> "${it.source}:${it.id}" }) { index, anime ->
+                    items(state.items, key = { "${it.source}:${it.id}" }) { anime ->
                         PosterCard(
                             anime = anime,
                             onClick = { onOpenAnime(anime.source.name, anime.id) },
-                            // Ряд в фокусе уезжает на середину экрана: у нижнего
-                            // ряда иначе видно постер, но не название под ним.
-                            // hasFocus, а не isFocused: модификатор достаётся
-                            // внешней колонке карточки, фокус держит Surface
-                            // внутри неё.
-                            modifier = Modifier.onFocusChanged { if (it.hasFocus) focusedItem = index },
                         )
                     }
                 }
@@ -313,7 +327,7 @@ private fun EmptyHint() {
     Column(
         Modifier
             .fillMaxSize()
-            .padding(top = 40.dp),
+            .padding(top = 40.dp, start = ScreenGutter, end = ScreenGutter),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
