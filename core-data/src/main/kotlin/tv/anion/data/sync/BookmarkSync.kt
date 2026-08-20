@@ -26,6 +26,22 @@ import tv.anion.source.kodik.AnionGoApi
 import java.io.IOException
 
 /**
+ * Ошибка от anion-go вместе с машинным кодом из поля `code`. Код нужен там, где
+ * текста сервера мало: часть ответов рассчитана на веб — например, требование
+ * решить капчу, которое на пульте выполнить нечем.
+ *
+ * Коды зеркалят [../../anion-go/pkg/errors/errors.go].
+ */
+class ApiException(val code: String?, message: String) : IOException(message)
+
+internal object ApiErrorCode {
+    const val UNAUTHORIZED = "UNAUTHORIZED"
+    const val CAPTCHA_REQUIRED = "CAPTCHA_REQUIRED"
+    const val CAPTCHA_INVALID = "CAPTCHA_INVALID"
+    const val TOO_MANY_ATTEMPTS = "TOO_MANY_ATTEMPTS"
+}
+
+/**
  * Что показывать на экране аккаунта. Ошибку держим отдельно: все автоматические
  * вызовы обёрнуты в runCatching и раньше глотали её молча — со стороны это
  * выглядело как «всё хорошо», хотя сессия могла протухнуть.
@@ -194,10 +210,14 @@ class HttpBookmarkRemote(
             http.newCall(builder.build()).execute().use { response ->
                 val text = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    val message = runCatching {
-                        json.parseToJsonElement(text).let { it as? JsonObject }?.get("message")?.toString()?.trim('"')
+                    val body = runCatching {
+                        json.parseToJsonElement(text) as? JsonObject
                     }.getOrNull()
-                    throw IOException(message ?: "сервер ответил ${response.code}")
+                    val field = { name: String -> body?.get(name)?.toString()?.trim('"') }
+                    throw ApiException(
+                        code = field("code"),
+                        message = field("message") ?: "сервер ответил ${response.code}",
+                    )
                 }
                 text
             }
