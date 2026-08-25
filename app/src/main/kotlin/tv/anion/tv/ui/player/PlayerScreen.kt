@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -84,6 +85,18 @@ fun PlayerScreen(
     val neighbours by session.neighbours.collectAsStateWithLifecycle()
     val title by session.title.collectAsStateWithLifecycle()
     var overlay by remember { mutableStateOf(false) }
+
+    // Пульт во время серии молчит, и телевизор считает это бездействием: без
+    // флага экран гаснет прямо на просмотре. Держим его только пока картинка
+    // действительно нужна — на паузе и после конца серии пусть засыпает, иначе
+    // уснувший зритель оставит панель гореть до утра. Флаг вешается на View, а
+    // не на окно: он снимается сам, когда экран плеера уходит.
+    val view = LocalView.current
+    val keepAwake = playback.isPlaying || playback.buffering || loading
+    DisposableEffect(keepAwake) {
+        view.keepScreenOn = keepAwake
+        onDispose { view.keepScreenOn = false }
+    }
 
     fun togglePlay() {
         if (playback.isPlaying) session.controller.pause() else session.controller.play()
