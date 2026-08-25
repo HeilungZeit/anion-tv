@@ -57,6 +57,8 @@ import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 import tv.anion.player.PlayerCommand
 import tv.anion.player.RemoteKeyMap
+import tv.anion.player.SkipHint
+import tv.anion.player.SkipKind
 import tv.anion.source.SourceId
 import tv.anion.tv.di.LocalAppContainer
 import tv.anion.tv.ui.components.MessagePane
@@ -77,6 +79,19 @@ fun PlayerScreen(
     }
     DisposableEffect(session) {
         onDispose { session.release() }
+    }
+
+    // Поверхность переживает смену серии, а контроллер — нет. Хост навигации
+    // рисует плеер обычным `when`, поэтому при переходе к следующей серии
+    // AndroidView остаётся тем же узлом композиции и его factory второй раз не
+    // зовётся — SurfaceView создаётся один раз и отдаётся только первому
+    // контроллеру. Новый играл звук в никуда: картинки нет, чёрный экран.
+    // Поэтому поверхность держится в состоянии и переотдаётся на каждую сессию.
+    var surface by remember { mutableStateOf<SurfaceView?>(null) }
+    DisposableEffect(session, surface) {
+        val view = surface
+        view?.let { session.controller.setVideoSurfaceView(it) }
+        onDispose { view?.let { session.controller.setVideoSurfaceView(null) } }
     }
 
     val playback by session.controller.state.collectAsStateWithLifecycle()
@@ -100,6 +115,22 @@ fun PlayerScreen(
 
     fun togglePlay() {
         if (playback.isPlaying) session.controller.pause() else session.controller.play()
+    }
+
+    // Опенинг мотается внутри серии, а эндинг — повод включить следующую: за
+    // ним идут титры и превью, и перемотка на конец отрезка высаживает ровно
+    // туда. У Kodik длины отрезка нет, известно только начало, но для этого
+    // действия она и не нужна.
+    val skipToNext = playback.visibleSkip?.kind == SkipKind.ENDING && neighbours.next != null
+    fun applySkip(hint: SkipHint) {
+        val next = neighbours.next
+        if (hint.kind == SkipKind.ENDING && next != null) onPlayEpisode(next)
+        else session.controller.skipTo(hint.segment)
+    }
+    val skipLabel = when {
+        skipToNext -> "следующая серия"
+        playback.visibleSkip?.kind == SkipKind.ENDING -> "пропустить эндинг"
+        else -> "пропустить опенинг"
     }
 
     // Два держателя фокуса. Без панели клавиши ловит экран целиком; с панелью
@@ -203,7 +234,7 @@ fun PlayerScreen(
                     // Исключение — идущий опенинг: там OK сразу пропускает.
                     PlayerCommand.Confirm -> {
                         val skip = playback.visibleSkip
-                        if (skip != null) session.controller.skipTo(skip) else overlay = true
+                        if (skip != null) applySkip(skip) else overlay = true
                     }
                     PlayerCommand.ShowPanel -> overlay = true
                     PlayerCommand.HidePanel -> Unit
@@ -217,10 +248,8 @@ fun PlayerScreen(
             .focusable(),
     ) {
         AndroidView(
-            factory = { context ->
-                SurfaceView(context).also { session.controller.setVideoSurfaceView(it) }
-            },
-            onRelease = { session.controller.setVideoSurfaceView(null) },
+            factory = { context -> SurfaceView(context).also { surface = it } },
+            onRelease = { surface = null },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -258,7 +287,7 @@ fun PlayerScreen(
                 .align(Alignment.BottomEnd)
                 .padding(56.dp),
         ) {
-            Pill("OK  —  пропустить опенинг")
+            Pill("OK  —  " + skipLabel)
         }
 
         AnimatedVisibility(visible = overlay, enter = fadeIn(), exit = fadeOut()) {
@@ -269,12 +298,13 @@ fun PlayerScreen(
                 positionMs = playback.positionMs,
                 durationMs = playback.durationMs,
                 isPlaying = playback.isPlaying,
-                canSkip = playback.visibleSkip != null,
+                skipLabel = skipLabel.replaceFirstChar { it.uppercase() }
+                    .takeIf { playback.visibleSkip != null },
                 playFocus = panelFocus,
                 onSeekBarFocusChanged = { seekBarFocused = it },
                 onPlayPause = ::togglePlay,
                 onSeek = { session.controller.seekBy(it) },
-                onSkip = { playback.visibleSkip?.let { session.controller.skipTo(it) } },
+                onSkip = { playback.visibleSkip?.let(::applySkip) },
             )
         }
     }
@@ -293,7 +323,8 @@ private fun PlayerPanel(
     positionMs: Long,
     durationMs: Long,
     isPlaying: Boolean,
-    canSkip: Boolean,
+    /** null — пропускать сейчас нечего, кнопки в панели нет. */
+    skipLabel: String?,
     playFocus: FocusRequester,
     onSeekBarFocusChanged: (Boolean) -> Unit,
     onPlayPause: () -> Unit,
@@ -364,7 +395,7 @@ private fun PlayerPanel(
                     icon = { tint -> TransportIcon(playing = isPlaying, tint = tint, size = 18.dp) },
                 )
                 PanelButton("+ 10 с", onClick = { onSeek(RemoteKeyMap.SEEK_STEP_MS) })
-                if (canSkip) PanelButton("Пропустить опенинг", onSkip)
+                if (skipLabel != null) PanelButton(skipLabel, onSkip)
             }
 
             Spacer(Modifier.height(12.dp))

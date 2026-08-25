@@ -192,7 +192,7 @@ class ExoPlaybackController(
             isPlaying = playing,
             buffering = p?.playbackState == Player.STATE_BUFFERING,
             error = if (playing) null else _state.value.error,
-            visibleSkip = skip?.visibleSkip(position),
+            visibleSkip = skip?.visibleSkip(position, duration),
             ended = p?.playbackState == Player.STATE_ENDED,
         )
     }

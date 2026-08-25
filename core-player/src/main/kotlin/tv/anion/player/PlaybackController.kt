@@ -32,7 +32,7 @@ data class PlaybackState(
     val isPlaying: Boolean = false,
     val buffering: Boolean = false,
     val error: String? = null,
-    val visibleSkip: Segment? = null,
+    val visibleSkip: SkipHint? = null,
     /** Серия доиграна до конца — повод предложить следующую (Э3). */
     val ended: Boolean = false,
 )
