@@ -43,6 +43,27 @@ class SkipControllerTest {
     }
 
     @Test
+    fun `в последние две минуты кнопка следующей серии есть и без разметки`() {
+        val skip = SkipController(Skips())
+
+        assertNull(skip.visibleSkip(1_379_000, durationMs = 1_500_000))
+        assertEquals(SkipKind.ENDING, skip.visibleSkip(1_380_000, durationMs = 1_500_000)?.kind)
+        assertEquals(SkipKind.ENDING, skip.visibleSkip(1_499_000, durationMs = 1_500_000)?.kind)
+        // Без известной длительности хвоста нет: считать его не от чего.
+        assertNull(skip.visibleSkip(1_380_000))
+        // Последней серии переходить некуда.
+        assertNull(SkipController(Skips(), isLastEpisode = true).visibleSkip(1_450_000, durationMs = 1_500_000))
+    }
+
+    @Test
+    fun `хвост не перекрывает отрезок эндинга, если тот начинается раньше`() {
+        val ending = Segment(startSeconds = 1_300, stopSeconds = 1_400)
+        val skip = SkipController(Skips(ending = ending))
+
+        assertEquals(SkipHint(ending, SkipKind.ENDING), skip.visibleSkip(1_310_000, durationMs = 1_500_000))
+    }
+
+    @Test
     fun `у Kodik известно только начало эндинга - окно всё равно есть`() {
         // anion-go отдаёт одно число, длину отбрасывает VideoSkipsDTO: окно
         // берётся из DEFAULT_WINDOW_SECONDS, и кнопка «следующая серия» живёт
