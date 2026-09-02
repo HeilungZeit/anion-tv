@@ -28,7 +28,7 @@ JVM-тестах и в CLI, без эмулятора. Прямое следст
 
 ## Сборка
 
-Wrapper на месте (Gradle 9.7.0), отдельный `gradle` в системе не нужен —
+Wrapper на месте (Gradle 9.7.1), отдельный `gradle` в системе не нужен —
 ни brew, ни PATH. Первый запуск сам скачает дистрибутив.
 
 ```bash
@@ -48,7 +48,7 @@ Wrapper на месте (Gradle 9.7.0), отдельный `gradle` в сист�
 хотя сеть и URL живые. Лечится подсовыванием архива в кэш мимо враппера:
 
 ```bash
-curl -L -o ~/.gradle/wrapper/dists/gradle-9.7.0-bin/*/gradle-9.7.0-bin.zip https://services.gradle.org/distributions/gradle-9.7.0-bin.zip
+curl -L -o ~/.gradle/wrapper/dists/gradle-9.7.1-bin/*/gradle-9.7.1-bin.zip https://services.gradle.org/distributions/gradle-9.7.1-bin.zip
 ```
 
 Перед этим удалить недокачанный `.part` и `.lck` из того же каталога, иначе
@@ -70,9 +70,13 @@ Settings → Build Tools → Gradle → Gradle JDK → ms-17.0.18
 
 ### Про версии
 
-Стек стоит на актуальном: AGP 9.3.0 (июль 2026), Gradle 9.7.0, Kotlin 2.3.20,
-compose-bom 2026.06.01, tv-material 1.1.0. Kotlin намеренно не 2.4.0 — та вышла
-11.08.2026, на день раньше этого скелета и на месяц позже AGP 9.3.
+Стек стоит на актуальном: AGP 9.4.0, Gradle 9.7.1, Kotlin 2.4.10,
+compose-bom 2026.08.00, tv-material 1.1.0, OkHttp 5.5.0.
+
+`compileSdk = 37` — не «на всякий случай»: свежие compose-bom и OkHttp
+объявляют его требованием в AAR-метаданных, и на 36 сборка падает ещё до
+компиляции, на `checkDebugAarMetadata`. Именно на этом стояли обновления от
+Dependabot.
 
 Следствия AGP 9, из-за которых build-файлы выглядят непривычно:
 
@@ -114,8 +118,9 @@ compose-bom 2026.06.01, tv-material 1.1.0. Kotlin намеренно не 2.4.0 
 
 ## Ставится
 
-**Платформа android-36** — в проекте `compileSdk = 36`, а установлена 36.1.
-Студия предложит доустановить на первой синхронизации, соглашаться.
+**Платформа android-37** — в проекте `compileSdk = 37`. AGP скачивает её сам
+при первой сборке, лицензии в SDK уже приняты; Студия предложит то же самое на
+синхронизации.
 `cmdline-tools` не установлены, поэтому `sdkmanager` из терминала пока нет;
 если он нужен, ставится в SDK Manager → SDK Tools.
 

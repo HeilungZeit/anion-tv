@@ -1,5 +1,7 @@
 package tv.anion.player
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import okhttp3.OkHttpClient
@@ -10,6 +12,7 @@ import tv.anion.resolve.ResolvedStream
  * отвечает 403 на середине серии (PLAN §2). Заголовки берутся из резолва,
  * а не хардкодятся — у AniLibria свой набор, у Kodik — `KodikHeaders.cdn`.
  */
+@OptIn(UnstableApi::class)
 object StreamDataSourceFactory {
 
     fun create(okHttp: OkHttpClient, headers: Map<String, String>): DataSource.Factory =

@@ -28,9 +28,9 @@ API и обход WAF уже разобраны и работают:
 
 ## Стек
 
-Kotlin 2.3.20, AGP 9.3.0, Gradle 9.7.0, JDK 17 (годится и JBR 25 из Студии),
-Compose for TV (`tv-material` 1.1.0), Media3, Room, OkHttp, kotlinx.serialization.
-`compileSdk = 36`, `minSdk = 23`.
+Kotlin 2.4.10, AGP 9.4.0, Gradle 9.7.1, JDK 17 (годится и JBR 25 из Студии),
+Compose for TV (`tv-material` 1.1.0), Media3, Room, OkHttp 5, kotlinx.serialization.
+`compileSdk = 37`, `minSdk = 23`.
 
 Версии — в [gradle/libs.versions.toml](gradle/libs.versions.toml). Помеченные
 «проверено» сверены с релиз-нотами; остальные заведомо рабочие, но, возможно,
@@ -137,6 +137,29 @@ anion-go доступен **только по `/proxy/api`**. Запросы к 
 - **Одна запись `videos` — это «серия N в озвучке X».** У тайтла бывает под сотню
   записей и три десятка озвучек вперемешку; список озвучек собирается
   группировкой по `data.dubbing`.
+
+### Зависимости и алерты Dependabot
+
+- **Алерты с манифестом `settings.gradle.kts` — это классpath сборки, а не
+  APK.** Проверяется одной командой:
+  `./gradlew :app:dependencies --configuration releaseRuntimeClasspath`. Если
+  библиотеки там нет, в телевизор она не едет. Так было со всеми 46 алертами,
+  из которых 38 — netty из старого Unified Test Platform, который AGP тянул
+  ради инструментальных тестов.
+- **`compileSdk` — главный стопор обновлений.** Свежие compose-bom и OkHttp 5
+  требуют 37 через AAR-метаданные, и сборка падает на `checkDebugAarMetadata`
+  ещё до компиляции. На этом молча стояли обе группы PR от Dependabot: ошибка
+  выглядит как «сломалась зависимость», хотя ломается ровно `compileSdk`.
+- **Транзитивные зависимости плагинов чинятся только через `buildscript` в
+  корневом [build.gradle.kts](build.gradle.kts).** В `settings.gradle.kts` тот
+  же блок не действует — там свой классpath, `force` молча ничего не меняет.
+  Проверять `./gradlew buildEnvironment`: строка вида `1.80.2 -> 1.84` значит,
+  что подмена сработала.
+- **`@OptIn(UnstableApi::class)` в media3 нужен линту, а не компилятору.**
+  Маркер объявлен в Java через `androidx.annotation.experimental`, поэтому
+  котлинов `@OptIn` его не закрывает — нужен `androidx.annotation.OptIn`. Линт
+  из AGP 9.4 стал ловить это ошибкой, и `:app:lintDebug` падал двенадцатью
+  `UnsafeOptInUsageError` на коде, который прекрасно компилировался.
 
 ### Свежесть данных
 

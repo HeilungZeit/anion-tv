@@ -2,10 +2,12 @@ package tv.anion.player
 
 import android.content.Context
 import android.view.SurfaceView
+import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
@@ -116,6 +118,11 @@ class ExoPlaybackController(
         _state.value = PlaybackState()
     }
 
+    // HLS-источник, своя политика ретраев и OkHttp-датасорс — всё это в media3
+    // помечено @UnstableApi. Аннотация нужна не компилятору, а линту: маркер
+    // объявлен в Java через androidx.annotation.experimental, поэтому котлинов
+    // @OptIn его не закрывает, а lint из AGP 9.4 стал такое ловить.
+    @OptIn(UnstableApi::class)
     private fun attach(stream: PlayableStream, positionMs: Long) {
         val mediaSource = HlsMediaSource.Factory(StreamDataSourceFactory.create(okHttp, stream.headers))
             .setLoadErrorHandlingPolicy(NoRetryOnForbiddenPolicy())
@@ -207,6 +214,7 @@ class ExoPlaybackController(
 }
 
 /** 403 не ретраится внутри ExoPlayer — иначе шторм сегментов обойдёт [ReResolveOnForbidden]. */
+@OptIn(UnstableApi::class)
 internal class NoRetryOnForbiddenPolicy : DefaultLoadErrorHandlingPolicy() {
     override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
         val cause = loadErrorInfo.exception

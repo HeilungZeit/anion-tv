@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "tv.anion.data"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 23 // Android TV 6.0 — нижняя планка дешёвых боксов

@@ -32,7 +32,7 @@ if (System.getenv("ANION_REQUIRE_SIGNING") == "true" && !hasReleaseSigning) {
 
 android {
     namespace = "tv.anion.tv"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "tv.anion.tv"

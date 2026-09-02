@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "tv.anion.player"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 23
