@@ -155,6 +155,10 @@ anion-go доступен **только по `/proxy/api`**. Запросы к 
   же блок не действует — там свой классpath, `force` молча ничего не меняет.
   Проверять `./gradlew buildEnvironment`: строка вида `1.80.2 -> 1.84` значит,
   что подмена сработала.
+- **Одного `buildscript` мало: линт резолвит свой инструмент отдельно.**
+  Конфигурация `androidLintTool` есть у каждого Android-модуля и тянет свои
+  копии BouncyCastle, httpclient и commons-lang3 — на них алерты и держались
+  после первой правки. Поэтому тот же список повторён в `allprojects`.
 - **`@OptIn(UnstableApi::class)` в media3 нужен линту, а не компилятору.**
   Маркер объявлен в Java через `androidx.annotation.experimental`, поэтому
   котлинов `@OptIn` его не закрывает — нужен `androidx.annotation.OptIn`. Линт
