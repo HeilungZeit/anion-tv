@@ -20,11 +20,23 @@ class KodikSource(
     private val api: AnionGoApi,
     private val resolver: StreamResolver,
     private val anilibria: AnimeSource? = null,
+    private val now: () -> Long = System::currentTimeMillis,
 ) : AnimeSource {
 
     override val id = SourceId.KODIK
     override val displayName = "Сейчас смотрят"
-    private val animeCache = ConcurrentHashMap<String, AnimeDto>()
+
+    /**
+     * Один ответ `/anime/{id}` обслуживает и детали, и список серий — без него
+     * открытие карточки стоило бы двух одинаковых запросов подряд.
+     *
+     * Срок жизни обязателен: карта живёт вместе с источником, то есть со всем
+     * процессом. Без него вышедшая серия не появлялась в карточке до полного
+     * закрытия приложения — сколько бы раз её ни открывали заново.
+     */
+    private val animeCache = ConcurrentHashMap<String, CachedAnime>()
+
+    private class CachedAnime(val dto: AnimeDto, val loadedAt: Long)
 
     /** Фид не листается — бэк отдаёт один срез сезона. */
     override suspend fun feed(page: Int): Page<Anime> {
@@ -148,9 +160,13 @@ class KodikSource(
 
     private fun translationIdOf(video: VideoDto): String? = video.data?.dubbing
 
-    private suspend fun animeDto(animeId: String): AnimeDto = animeCache[animeId] ?: AnionJson
-        .decodeFromString(AnimeDto.serializer(), api.anime(animeId))
-        .also { animeCache[animeId] = it }
+    private suspend fun animeDto(animeId: String): AnimeDto {
+        val cached = animeCache[animeId]
+        if (cached != null && now() - cached.loadedAt < ANIME_TTL_MS) return cached.dto
+
+        return AnionJson.decodeFromString(AnimeDto.serializer(), api.anime(animeId))
+            .also { animeCache[animeId] = CachedAnime(it, now()) }
+    }
 
     private fun AnimeDto.anilibriaAlias(): String? = remoteIds?.anilibriaAlias
         ?.trim()
@@ -188,6 +204,9 @@ class KodikSource(
 
     private companion object {
         const val PAGE_SIZE = 30
+
+        /** Столько живёт ответ по тайтлу: пары минут хватает, чтобы не дёргать бэк дважды за заход. */
+        const val ANIME_TTL_MS = 5 * 60_000L
         const val KODIK_PLAYER = "Kodik"
         val ANILIBRIA_TRANSLATION = Translation(
             id = "anilibria",

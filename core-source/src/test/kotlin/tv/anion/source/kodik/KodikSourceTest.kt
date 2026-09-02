@@ -152,9 +152,36 @@ class KodikSourceTest {
     }
 
     private class FakeApi : AnionGoApi {
+        var animeRequests = 0
+
         override suspend fun feed() = Fixtures.read("aniongo-feed.json")
-        override suspend fun anime(id: String) = Fixtures.read("aniongo-anime.json")
+        override suspend fun anime(id: String): String {
+            animeRequests++
+            return Fixtures.read("aniongo-anime.json")
+        }
         override suspend fun search(query: String, limit: Int, offset: Int) = "[]"
+    }
+
+    @Test
+    fun `ответ по тайтлу переспрашивается, когда протух`() = runTest {
+        // Симптом на живом телевизоре: вышедшая вчера серия не появлялась в
+        // карточке, пока приложение не закроют полностью. Карта жила вместе с
+        // процессом, а процесс на приставке не умирает неделями.
+        val api = FakeApi()
+        var clock = 0L
+        val source = KodikSource(api, RecordingResolver(), now = { clock })
+
+        source.details("15")
+        source.episodes("15", null)
+        assertEquals(1, api.animeRequests, "детали и серии обслуживает один ответ")
+
+        clock += 60_000
+        source.details("15")
+        assertEquals(1, api.animeRequests, "свежий ответ переспрашивать незачем")
+
+        clock += 5 * 60_000
+        source.details("15")
+        assertEquals(2, api.animeRequests, "протухший ответ обязан обновиться")
     }
 
     private class FakeAniLibriaApi : AniLibriaApi {

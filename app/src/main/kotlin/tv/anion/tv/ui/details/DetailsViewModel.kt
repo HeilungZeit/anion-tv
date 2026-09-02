@@ -15,6 +15,7 @@ import tv.anion.data.sync.BookmarkSync
 import tv.anion.data.repo.BookmarkSeed
 import tv.anion.data.repo.BookmarkRepository
 import tv.anion.data.repo.BookmarkKind
+import tv.anion.tv.ui.CONTENT_TTL_MS
 import kotlinx.coroutines.Job
 
 data class DetailsUiState(
@@ -39,6 +40,7 @@ class DetailsViewModel(
     private val progress: WatchProgressRepository,
     private val bookmarks: BookmarkRepository,
     private val sync: BookmarkSync,
+    private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val _state = MutableStateFlow(DetailsUiState())
     val state: StateFlow<DetailsUiState> = _state.asStateFlow()
@@ -46,9 +48,24 @@ class DetailsViewModel(
     private var animeId: String? = null
     private var progressJob: Job? = null
     private var bookmarkJob: Job? = null
+    private var loadJob: Job? = null
+
+    /** Когда получен показанный сейчас ответ сети; 0 — данных ещё нет. */
+    private var loadedAt = 0L
 
     fun load(sourceId: SourceId, animeId: String) {
-        if (this.sourceId == sourceId && this.animeId == animeId && _state.value.details != null) return
+        val sameAnime = this.sourceId == sourceId &&
+            this.animeId == animeId &&
+            _state.value.details != null
+
+        if (sameAnime) {
+            // Свежее — не трогаем. Протухшее обновляем молча, не сбрасывая
+            // экран в «Загрузка…»: карточка уже нарисована, и мигать ею на
+            // каждом возврате незачем.
+            if (now() - loadedAt < CONTENT_TTL_MS) return
+            fetch(sourceId, animeId, keepVisible = true)
+            return
+        }
         this.sourceId = sourceId
         this.animeId = animeId
         progressJob?.cancel()
@@ -78,28 +95,45 @@ class DetailsViewModel(
                 )
             }
         }
-        _state.value = DetailsUiState(loading = true)
-        viewModelScope.launch {
+        fetch(sourceId, animeId, keepVisible = false)
+    }
+
+    /**
+     * @param keepVisible тихое обновление уже показанной карточки: ни экран
+     * загрузки, ни ошибка не должны отбирать у зрителя то, что он уже видит.
+     */
+    private fun fetch(sourceId: SourceId, animeId: String, keepVisible: Boolean) {
+        loadJob?.cancel()
+        if (!keepVisible) {
+            loadedAt = 0L
+            _state.value = DetailsUiState(loading = true)
+        }
+        loadJob = viewModelScope.launch {
             runCatching {
                 val source = sources.byId(sourceId)
                 val details = source.details(animeId)
-                val translation = details.translations.firstOrNull()?.id
+                // Выбранную озвучку сохраняем, если она осталась в ответе:
+                // иначе тихое обновление молча перекидывало бы список серий
+                // на первую озвучку из списка.
+                val translation = _state.value.translationId
+                    ?.takeIf { current -> details.translations.any { it.id == current } }
+                    ?: details.translations.firstOrNull()?.id
                 Triple(details, source.episodes(animeId, translation), translation)
             }.onSuccess { (details, episodes, translation) ->
-                _state.value = DetailsUiState(
+                loadedAt = now()
+                // Правится текущее состояние, а не собирается новое: статус
+                // закладки и прогресс приходят из Room раньше ответа сети, и
+                // пересборка их затирала — кнопка показывала «В закладки» у
+                // тайтла, который в закладках уже был.
+                _state.value = _state.value.copy(
                     details = details,
                     episodes = episodes,
                     translationId = translation,
                     loading = false,
-                    watchedEpisodes = _state.value.watchedEpisodes,
-                    partial = _state.value.partial,
-                    resume = _state.value.resume,
-                    // Статус из Room приходит раньше ответа сети, и целиком
-                    // пересобранное состояние его затирало: кнопка показывала
-                    // «В закладки» у тайтла, который в закладках уже был.
-                    bookmark = _state.value.bookmark,
+                    error = null,
                 )
             }.onFailure { error ->
+                if (keepVisible) return@onFailure
                 _state.value = DetailsUiState(loading = false, error = error.message)
             }
         }

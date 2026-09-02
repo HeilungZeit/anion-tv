@@ -23,6 +23,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.MaterialTheme
@@ -54,6 +55,13 @@ fun HomeScreen(
     val container = LocalAppContainer.current
     val vm = viewModel { HomeViewModel(container.sources, container.watchProgress) }
     val state by vm.state.collectAsStateWithLifecycle()
+    // Появление экрана — заход, «назад» из карточки, возврат из фона — повод
+    // проверить, не протухли ли ряды. Приставка держит Activity живой сутками,
+    // и без этого фид оставался таким, каким его загрузил холодный старт.
+    LifecycleResumeEffect(Unit) {
+        vm.refreshIfStale()
+        onPauseOrDispose { }
+    }
     // Снимочная карта, а не обычная: эффект начального фокуса ждёт появления
     // держателя через snapshotFlow, и он обязан узнать о записи.
     val requesters = remember { mutableStateMapOf<String, FocusRequester>() }

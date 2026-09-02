@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Button
@@ -85,8 +86,12 @@ fun DetailsScreen(
     }
     val state by vm.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
-    LaunchedEffect(source, animeId) {
+    // Не LaunchedEffect: карточку открывают повторно и возвращаются к ней из
+    // фона, а список серий за это время мог пополниться. Свежесть решает сама
+    // ViewModel — здесь только повод спросить.
+    LifecycleResumeEffect(source, animeId) {
         vm.load(SourceId.valueOf(source), animeId)
+        onPauseOrDispose { }
     }
     // Прокрутка наверх — отдельным эффектом и только когда список уже
     // отрисован. scrollToItem на состоянии, не привязанном к LazyColumn,

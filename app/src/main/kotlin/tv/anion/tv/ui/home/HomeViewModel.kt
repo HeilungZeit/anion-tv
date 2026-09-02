@@ -11,6 +11,7 @@ import tv.anion.source.SourceId
 import tv.anion.source.SourceRegistry
 import tv.anion.source.model.Anime
 import tv.anion.data.repo.WatchProgressRepository
+import tv.anion.tv.ui.CONTENT_TTL_MS
 
 data class HomeRow(
     val sourceId: SourceId?,
@@ -27,12 +28,17 @@ data class HomeUiState(
 class HomeViewModel(
     private val sources: SourceRegistry,
     progress: WatchProgressRepository,
+    private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
     /** Ключ карточки, чтобы после «назад» фокус не прыгал в начало ряда. */
     var lastFocusedKey: String? = null
+
+    /** Время последнего удачного ответа источника; 0 — рядов ещё нет. */
+    private var loadedAt = 0L
+    private var inFlight = 0
 
     init {
         _state.value = HomeUiState(
@@ -51,18 +57,45 @@ class HomeViewModel(
                 }
             }
         }
+        refreshIfStale()
+    }
+
+    /**
+     * Перезагрузка рядов, если они протухли.
+     *
+     * Вызывается при каждом появлении экрана — заход, «назад» из карточки,
+     * возврат из фона. ViewModel живёт в Activity, а та переживает выход на
+     * главный экран приставки: без этого ряды оставались такими же, какими их
+     * загрузил холодный старт, и вышедшая серия не показывалась вовсе.
+     */
+    fun refreshIfStale() {
+        if (inFlight > 0 || (loadedAt != 0L && now() - loadedAt < CONTENT_TTL_MS)) return
+
         sources.all.forEach { source ->
+            inFlight++
             viewModelScope.launch {
                 val result = runCatching { source.feed(1) }
+                if (result.isSuccess) loadedAt = now()
+                inFlight--
                 _state.update { current ->
                     current.copy(
                         loading = false,
                         rows = current.rows.map { row ->
                             if (row.sourceId != source.id) row
-                            else row.copy(
-                                items = result.getOrNull()?.items.orEmpty()
-                                    .distinctBy { anime -> anime.source to anime.id },
-                                error = result.exceptionOrNull()?.message,
+                            else result.fold(
+                                onSuccess = { page ->
+                                    row.copy(
+                                        items = page.items
+                                            .distinctBy { anime -> anime.source to anime.id },
+                                        error = null,
+                                    )
+                                },
+                                // Уже показанный ряд не стирается: отвалившаяся
+                                // сеть — не повод оставить зрителя с пустым
+                                // экраном вместо вчерашнего списка.
+                                onFailure = { error ->
+                                    if (row.items.isEmpty()) row.copy(error = error.message) else row
+                                },
                             )
                         },
                     )

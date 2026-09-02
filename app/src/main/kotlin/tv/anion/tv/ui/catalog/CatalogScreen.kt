@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Button
@@ -43,6 +44,11 @@ fun CatalogScreen(
     val container = LocalAppContainer.current
     val vm = viewModel { CatalogViewModel(container.sources) }
     val state by vm.state.collectAsStateWithLifecycle()
+    // Появление экрана — повод перепроверить каталог: см. refreshIfStale.
+    LifecycleResumeEffect(Unit) {
+        vm.refreshIfStale()
+        onPauseOrDispose { }
+    }
     val initial = rememberInitialFocus(state.items.isNotEmpty())
 
     // Поля от края экрана экран отмеряет сам: общей рамки вокруг экранов нет.
