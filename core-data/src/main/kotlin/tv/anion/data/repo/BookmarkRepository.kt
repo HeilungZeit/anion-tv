@@ -42,8 +42,11 @@ interface BookmarkRepository {
     fun observeAll(): Flow<List<Bookmark>>
     suspend fun all(): List<Bookmark>
     suspend fun get(source: SourceId, animeId: String): Bookmark?
-    suspend fun ensureWatching(seed: BookmarkSeed): Bookmark
-    suspend fun advanceWatched(seed: BookmarkSeed, episode: Int): Bookmark
+    /**
+     * Досмотрена последняя серия — существующая закладка переходит в
+     * «Просмотрено». Новой не создаёт: закладки ставятся только руками.
+     */
+    suspend fun completeIfLast(source: SourceId, animeId: String, episode: Int, totalEpisodes: Int): Bookmark?
     /** Статус, выбранный руками на карточке тайтла. */
     suspend fun setKind(seed: BookmarkSeed, kind: BookmarkKind): Bookmark
     suspend fun remove(source: SourceId, animeId: String): Bookmark?
@@ -60,19 +63,15 @@ class RoomBookmarkRepository(
     override suspend fun all() = store.all().map(BookmarkEntity::toModel)
     override suspend fun get(source: SourceId, animeId: String) = store.get(source.name, animeId)?.toModel()
 
-    override suspend fun ensureWatching(seed: BookmarkSeed): Bookmark {
-        val old = store.get(seed.source.name, seed.animeId)
-        if (old != null) return old.toModel()
-        return write(seed, watched = 0, kind = BookmarkKind.WATCHING, old = null)
-    }
+    override suspend fun completeIfLast(source: SourceId, animeId: String, episode: Int, totalEpisodes: Int): Bookmark? {
+        val old = store.get(source.name, animeId) ?: return null
+        val total = maxOf(totalEpisodes, old.totalEpisodes)
+        val alreadyWatched = BookmarkKind.fromWire(old.kind) == BookmarkKind.WATCHED
+        if (total <= 0 || episode < total || alreadyWatched) return old.toModel()
 
-    override suspend fun advanceWatched(seed: BookmarkSeed, episode: Int): Bookmark {
-        val old = store.get(seed.source.name, seed.animeId)
-        if (old != null && old.watchedEpisodes >= episode) return old.toModel()
-        val total = maxOf(seed.totalEpisodes, old?.totalEpisodes ?: 0)
-        val kind = if (total > 0 && episode >= total) BookmarkKind.WATCHED
-        else old?.kind?.let(BookmarkKind::fromWire) ?: BookmarkKind.WATCHING
-        return write(seed.copy(totalEpisodes = total), episode, kind, old)
+        // Меняется только статус: счётчик серий у закладки сервер выводит из прогресса.
+        val seed = BookmarkSeed(source, animeId, old.title, old.posterUrl, total)
+        return write(seed, old.watchedEpisodes, BookmarkKind.WATCHED, old)
     }
 
     override suspend fun setKind(seed: BookmarkSeed, kind: BookmarkKind): Bookmark {

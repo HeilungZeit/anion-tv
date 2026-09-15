@@ -1,7 +1,5 @@
 package tv.anion.data.sync
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -9,14 +7,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import tv.anion.data.repo.Bookmark
 import tv.anion.data.repo.BookmarkKind
 import tv.anion.data.repo.BookmarkRepository
@@ -24,6 +17,7 @@ import tv.anion.data.repo.WatchProgressRepository
 import tv.anion.source.SourceId
 import tv.anion.source.kodik.AnionGoApi
 import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Ошибка от anion-go вместе с машинным кодом из поля `code`. Код нужен там, где
@@ -67,6 +61,8 @@ class DefaultBookmarkSync(
     private val sessions: SessionStore,
     private val progress: WatchProgressRepository? = null,
     private val syncState: SyncStateStore? = null,
+    private val progressRemote: WatchProgressRemote? = null,
+    private val progressMigration: OneTimeFlag? = null,
     private val now: () -> Long = System::currentTimeMillis,
 ) : BookmarkSync {
     private val mutex = Mutex()
@@ -88,14 +84,29 @@ class DefaultBookmarkSync(
                 // CAS по updatedAt: поздний тик плеера не станет ошибочно clean.
                 repository.markSynced(local, confirmed.serverId)
             }
-        progress?.pendingSync()
-            ?.filter { it.source == SourceId.KODIK && it.finished }
-            ?.forEach { watched ->
-                val bookmark = repository.get(watched.source, watched.animeId)
-                if (bookmark != null && !bookmark.dirty && bookmark.watchedEpisodes >= watched.episode) {
-                    progress.markSynced(watched)
-                }
-            }
+    }
+
+    /**
+     * Досмотренные серии уходят отдельным эндпоинтом, а не счётчиком закладки:
+     * счётчик терял точечные отметки и существовал только у тайтлов в закладках.
+     * Очередь — сама Room: строка остаётся pending, пока сервер её не принял, а
+     * CAS по updatedAt не подтвердит тик, записанный уже после выборки.
+     */
+    private suspend fun pushProgress() {
+        val session = sessions.read() ?: return
+        val progress = progress ?: return
+        val remote = progressRemote ?: return
+
+        // Старый путь доносил до сервера только счётчик, точечных серий там нет.
+        // Один раз отправляем все досмотренные, дальше — только новые.
+        val migrating = progressMigration?.isSet() == false
+        val rows = if (migrating) progress.finished(SourceId.KODIK) else progress.pendingFinishedSync(SourceId.KODIK)
+
+        if (rows.isNotEmpty()) {
+            remote.sync(session, rows.groupBy({ it.animeId }, { it.episode }).mapValues { it.value.toSet() })
+            rows.forEach { progress.markSynced(it) }
+        }
+        if (migrating) progressMigration?.set()
     }
 
     override suspend fun deleteRemote(bookmark: Bookmark) {
@@ -110,7 +121,18 @@ class DefaultBookmarkSync(
         try {
             // Сначала pull: dirty защищён от перезаписи, затем он отправляется наверх.
             pull()
+            // Прогресс раньше закладок: создание закладки берёт счётчик из него. Его
+            // сбой не должен держать закладки, поэтому ошибка всплывает после них.
+            val progressError = try {
+                pushProgress()
+                null
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                error
+            }
             pushDirty()
+            progressError?.let { throw it }
             val at = now()
             syncState?.write(at)
             _state.value = SyncState(lastSuccessAt = at, running = false, error = null)
@@ -139,11 +161,13 @@ class HttpBookmarkRemote(
     private val baseUrl: String = AnionGoApi.BASE_URL,
     private val clientInfo: ClientInfo = ClientInfo.TV,
 ) : BookmarkRemote {
+    private val anionGo = AnionGoHttp(http, clientInfo)
+
     override suspend fun login(login: String, password: String): String {
         val key = if ('@' in login) "email" else "username"
         val body = buildJsonObject { put(key, login); put("password", password) }
-        val response = request("$baseUrl/user/login", "POST", body.toString(), sessionId = null)
-        return json.decodeFromString<LoginDto>(response).session
+        val response = request("$baseUrl/user/login", HttpMethod.POST, body.toString(), sessionId = null)
+        return AnionGoJson.decodeFromString<LoginDto>(response).session
             .takeIf(String::isNotBlank) ?: error("сервер не вернул сессию")
     }
 
@@ -152,23 +176,23 @@ class HttpBookmarkRemote(
      * «вышел на телевизоре» ничего не означало бы.
      */
     override suspend fun logout(sessionId: String) {
-        runCatching { request("$baseUrl/user/logout", "POST", "{}", sessionId) }
+        runCatching { request("$baseUrl/user/logout", HttpMethod.POST, "{}", sessionId) }
     }
 
     /** Удаление на сайте идёт по serverId, а не по animeId — так в роутере. */
     override suspend fun delete(sessionId: String, serverId: String) {
-        request("$baseUrl/bookmarks/$serverId", "DELETE", null, sessionId)
+        request("$baseUrl/bookmarks/$serverId", HttpMethod.DELETE, null, sessionId)
     }
 
     override suspend fun profile(sessionId: String): UserProfile {
-        val body = request("$baseUrl/user", "GET", null, sessionId)
-        val dto = json.decodeFromString<UserDto>(body)
+        val body = request("$baseUrl/user", HttpMethod.GET, null, sessionId)
+        val dto = AnionGoJson.decodeFromString<UserDto>(body)
         return UserProfile(username = dto.username, email = dto.email)
     }
 
     override suspend fun getAll(sessionId: String): List<Bookmark> {
-        val body = request("$baseUrl/bookmarks", "GET", null, sessionId)
-        val response = json.decodeFromString<BookmarksDto>(body)
+        val body = request("$baseUrl/bookmarks", HttpMethod.GET, null, sessionId)
+        val response = AnionGoJson.decodeFromString<BookmarksDto>(body)
         return (response.watching + response.willWatch + response.watched + response.onHold + response.dropped)
             .map { it.toModel() }
     }
@@ -178,55 +202,23 @@ class HttpBookmarkRemote(
         else getAll(sessionId).firstOrNull { it.animeId == bookmark.animeId }
         val payload = bookmark.payload()
         val body = if (existing != null) {
-            request("$baseUrl/bookmarks/${bookmark.animeId}", "PUT", payload, sessionId)
+            request("$baseUrl/bookmarks/${bookmark.animeId}", HttpMethod.PUT, payload, sessionId)
         } else {
-            request("$baseUrl/bookmarks", "POST", bookmark.createPayload(), sessionId)
+            request("$baseUrl/bookmarks", HttpMethod.POST, bookmark.createPayload(), sessionId)
         }
         return if (existing != null) {
-            json.decodeFromString<RemoteBookmarkDto>(body).toModel()
+            AnionGoJson.decodeFromString<RemoteBookmarkDto>(body).toModel()
         } else {
-            val grouped = json.decodeFromString<BookmarksDto>(body)
+            val grouped = AnionGoJson.decodeFromString<BookmarksDto>(body)
             (grouped.watching + grouped.willWatch + grouped.watched + grouped.onHold + grouped.dropped)
                 .firstOrNull { it.yumiId.toString() == bookmark.animeId }
                 ?.toModel() ?: bookmark
         }
     }
 
-    private suspend fun request(url: String, method: String, body: String?, sessionId: String?): String =
-        withContext(Dispatchers.IO) {
-            val builder = Request.Builder().url(url)
-                .header(AnionGoApi.CLIENT_HEADER, AnionGoApi.CLIENT_VALUE)
-                .header("Accept", "application/json")
-                .header("X-Client-Platform", clientInfo.platform)
-                .header("X-Client-OS", clientInfo.os)
-                .header("X-Device-Name", clientInfo.deviceName)
-            if (sessionId != null) builder.header("Cookie", "X-Session-ID=$sessionId")
-            val requestBody = body?.toRequestBody(JSON_MEDIA_TYPE)
-            when (method) {
-                "GET" -> builder.get()
-                "POST" -> builder.post(requireNotNull(requestBody))
-                "PUT" -> builder.put(requireNotNull(requestBody))
-            }
-            http.newCall(builder.build()).execute().use { response ->
-                val text = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    val body = runCatching {
-                        json.parseToJsonElement(text) as? JsonObject
-                    }.getOrNull()
-                    val field = { name: String -> body?.get(name)?.toString()?.trim('"') }
-                    throw ApiException(
-                        code = field("code"),
-                        message = field("message") ?: "сервер ответил ${response.code}",
-                    )
-                }
-                text
-            }
-        }
-
-    private companion object {
-        val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
-        val JSON_MEDIA_TYPE = "application/json".toMediaType()
-    }
+    /** У всех эндпоинтов закладок и аккаунта ответ с телом; пустой — нарушение контракта. */
+    private suspend fun request(url: String, method: HttpMethod, body: String?, sessionId: String?): String =
+        anionGo.request(url, method, body, sessionId) ?: throw IOException("сервер ответил без тела")
 }
 
 @Serializable private data class LoginDto(val session: String)
@@ -269,9 +261,12 @@ private fun RemoteBookmarkDto.toModel() = Bookmark(
     dirty = false,
 )
 
+/*
+ * Счётчик просмотренных серий в закладку не отправляется: его выводит сервер из
+ * прогресса просмотра, а устаревшее число с ТВ раньше откатывало прогресс сайта.
+ */
 private fun Bookmark.payload(): String = buildJsonObject {
     put("status", kind.wireName)
-    put("watchedEpisodes", watchedEpisodes)
     put("totalEpisodes", totalEpisodes)
     put("animeStatus", animeStatus)
 }.toString()
@@ -281,7 +276,6 @@ private fun Bookmark.createPayload(): String = buildJsonObject {
     put("yumiSlug", animeId)
     put("title", title)
     put("status", kind.wireName)
-    put("watchedEpisodes", watchedEpisodes)
     put("totalEpisodes", totalEpisodes)
     put("animeStatus", animeStatus)
     put("poster", buildJsonObject {

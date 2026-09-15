@@ -9,7 +9,10 @@ interface WatchProgressStore {
     fun observeContinueWatching(): Flow<List<WatchProgressEntity>>
     fun observeAnime(source: String, animeId: String): Flow<List<WatchProgressEntity>>
     suspend fun get(source: String, animeId: String, episode: Int): WatchProgressEntity?
-    suspend fun pendingSync(): List<WatchProgressEntity>
+    /** Досмотренные серии источника, ещё не принятые сервером. */
+    suspend fun pendingFinishedSync(source: String): List<WatchProgressEntity>
+    /** Все досмотренные серии источника — для разового переноса истории. */
+    suspend fun finished(source: String): List<WatchProgressEntity>
     suspend fun upsert(value: WatchProgressEntity)
     suspend fun markSynced(source: String, animeId: String, episode: Int, updatedAt: Long, syncedAt: Long): Int
 }
@@ -25,8 +28,13 @@ interface WatchProgressDao : WatchProgressStore {
     @Query("SELECT * FROM watch_progress WHERE source = :source AND animeId = :animeId AND episode = :episode")
     override suspend fun get(source: String, animeId: String, episode: Int): WatchProgressEntity?
 
-    @Query("SELECT * FROM watch_progress WHERE syncedAt IS NULL OR updatedAt > syncedAt ORDER BY updatedAt")
-    override suspend fun pendingSync(): List<WatchProgressEntity>
+    // Недосмотренные строки тикают вместе с плеером и на сервер не идут вовсе:
+    // без условия на finished они висели бы в выборке вечно.
+    @Query("SELECT * FROM watch_progress WHERE source = :source AND finished = 1 AND (syncedAt IS NULL OR updatedAt > syncedAt) ORDER BY updatedAt")
+    override suspend fun pendingFinishedSync(source: String): List<WatchProgressEntity>
+
+    @Query("SELECT * FROM watch_progress WHERE source = :source AND finished = 1")
+    override suspend fun finished(source: String): List<WatchProgressEntity>
 
     @Upsert override suspend fun upsert(value: WatchProgressEntity)
 

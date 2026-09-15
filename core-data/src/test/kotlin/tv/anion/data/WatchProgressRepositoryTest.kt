@@ -1,12 +1,8 @@
 package tv.anion.data
 
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
-import tv.anion.data.db.WatchProgressEntity
-import tv.anion.data.db.WatchProgressStore
 import tv.anion.data.repo.Bookmark
 import tv.anion.data.repo.BookmarkConflictResolver
 import tv.anion.data.repo.BookmarkKind
@@ -65,26 +61,4 @@ class WatchProgressRepositoryTest {
         SourceId.KODIK, "42", null, BookmarkKind.WATCHING, watched, 12,
         "Тайтл", null, "ongoing", updatedAt, null, dirty,
     )
-}
-
-private class MemoryProgressStore : WatchProgressStore {
-    private val values = linkedMapOf<Triple<String, String, Int>, WatchProgressEntity>()
-    private val state = MutableStateFlow<List<WatchProgressEntity>>(emptyList())
-
-    override fun observeContinueWatching(): Flow<List<WatchProgressEntity>> = state
-    override fun observeAnime(source: String, animeId: String): Flow<List<WatchProgressEntity>> =
-        MutableStateFlow(values.values.filter { it.source == source && it.animeId == animeId })
-    override suspend fun get(source: String, animeId: String, episode: Int) = values[Triple(source, animeId, episode)]
-    override suspend fun pendingSync() = values.values.filter { it.syncedAt == null || it.updatedAt > it.syncedAt }
-    override suspend fun upsert(value: WatchProgressEntity) {
-        values[Triple(value.source, value.animeId, value.episode)] = value
-        state.value = values.values.filter { !it.finished && it.positionMs > 0 }.sortedByDescending { it.updatedAt }
-    }
-    override suspend fun markSynced(source: String, animeId: String, episode: Int, updatedAt: Long, syncedAt: Long): Int {
-        val key = Triple(source, animeId, episode)
-        val current = values[key] ?: return 0
-        if (current.updatedAt != updatedAt) return 0
-        values[key] = current.copy(syncedAt = syncedAt)
-        return 1
-    }
 }

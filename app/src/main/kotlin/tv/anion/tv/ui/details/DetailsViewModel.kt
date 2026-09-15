@@ -10,7 +10,10 @@ import tv.anion.source.SourceId
 import tv.anion.source.SourceRegistry
 import tv.anion.source.model.AnimeDetails
 import tv.anion.source.model.Episode
+import tv.anion.data.repo.EpisodeMarksPolicy
+import tv.anion.data.repo.WatchProgress
 import tv.anion.data.repo.WatchProgressRepository
+import tv.anion.data.sync.AccountWatchedEpisodes
 import tv.anion.data.sync.BookmarkSync
 import tv.anion.data.repo.BookmarkSeed
 import tv.anion.data.repo.BookmarkRepository
@@ -40,6 +43,8 @@ class DetailsViewModel(
     private val progress: WatchProgressRepository,
     private val bookmarks: BookmarkRepository,
     private val sync: BookmarkSync,
+    private val accountWatched: AccountWatchedEpisodes,
+    signedIn: StateFlow<Boolean>,
     private val now: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val _state = MutableStateFlow(DetailsUiState())
@@ -52,6 +57,28 @@ class DetailsViewModel(
 
     /** Когда получен показанный сейчас ответ сети; 0 — данных ещё нет. */
     private var loadedAt = 0L
+    private var remoteJob: Job? = null
+
+    /** Строки прогресса тайтла из Room — позиции и досмотры на этом устройстве. */
+    private var localProgress: List<WatchProgress> = emptyList()
+
+    /** Серии, отмеченные в аккаунте — на сайте или на другом устройстве. */
+    private var remoteWatched: Set<Int> = emptySet()
+
+    init {
+        viewModelScope.launch {
+            signedIn.collect { isSignedIn ->
+                if (isSignedIn) {
+                    refreshRemote()
+                } else {
+                    // Вышли из аккаунта — отметки с сайта больше не наши.
+                    remoteJob?.cancel()
+                    remoteWatched = emptySet()
+                    publishProgress()
+                }
+            }
+        }
+    }
 
     fun load(sourceId: SourceId, animeId: String) {
         val sameAnime = this.sourceId == sourceId &&
@@ -68,6 +95,8 @@ class DetailsViewModel(
         }
         this.sourceId = sourceId
         this.animeId = animeId
+        localProgress = emptyList()
+        remoteWatched = emptySet()
         progressJob?.cancel()
         bookmarkJob?.cancel()
         bookmarkJob = viewModelScope.launch {
@@ -78,21 +107,8 @@ class DetailsViewModel(
         }
         progressJob = viewModelScope.launch {
             progress.observeAnime(sourceId, animeId).collect { values ->
-                // Продолжаем самую свежую недосмотренную серию: на ТВ это
-                // главный сценарий, и ради него не должно быть лишних нажатий.
-                val resume = values
-                    .filterNot { it.finished }
-                    .filter { it.positionMs > RESUME_THRESHOLD_MS }
-                    .maxByOrNull { it.updatedAt }
-                    ?.let { ResumePoint(it.episode, it.positionMs) }
-
-                _state.value = _state.value.copy(
-                    watchedEpisodes = values.filter { it.finished }.mapTo(mutableSetOf()) { it.episode },
-                    partial = values.filterNot { it.finished }
-                        .filter { it.durationMs > 0 }
-                        .associate { it.episode to (it.positionMs.toFloat() / it.durationMs).coerceIn(0f, 1f) },
-                    resume = resume,
-                )
+                localProgress = values
+                publishProgress()
             }
         }
         fetch(sourceId, animeId, keepVisible = false)
@@ -107,7 +123,10 @@ class DetailsViewModel(
         if (!keepVisible) {
             loadedAt = 0L
             _state.value = DetailsUiState(loading = true)
+            // Отметки живут отдельно от ответа сети и сбрасываться вместе с ним не должны.
+            publishProgress()
         }
+        refreshRemote()
         loadJob = viewModelScope.launch {
             runCatching {
                 val source = sources.byId(sourceId)
@@ -136,6 +155,40 @@ class DetailsViewModel(
                 if (keepVisible) return@onFailure
                 _state.value = DetailsUiState(loading = false, error = error.message)
             }
+        }
+    }
+
+    /**
+     * Отметки собираются из двух источников: досмотра на этом устройстве и
+     * аккаунта. Правило объединения — в [EpisodeMarksPolicy].
+     */
+    private fun publishProgress() {
+        val marks = EpisodeMarksPolicy.of(localProgress, remoteWatched)
+        _state.value = _state.value.copy(
+            watchedEpisodes = marks.watched,
+            partial = marks.partial,
+            // Продолжаем самую свежую недосмотренную серию: на ТВ это главный
+            // сценарий, и ради него не должно быть лишних нажатий.
+            resume = marks.resume?.let { ResumePoint(it.episode, it.positionMs) },
+        )
+    }
+
+    /** Серии из аккаунта. Ошибка сети не стирает показанное — протухшее обновляется молча. */
+    private fun refreshRemote() {
+        val sourceId = sourceId ?: return
+        val animeId = animeId ?: return
+        remoteJob?.cancel()
+        remoteJob = viewModelScope.launch {
+            runCatching { accountWatched.forAnime(sourceId, animeId) }
+                .onSuccess { episodes ->
+                    // Пока шёл запрос, могли открыть другой тайтл: чужие отметки
+                    // в его карточку попасть не должны.
+                    if (this@DetailsViewModel.sourceId != sourceId || this@DetailsViewModel.animeId != animeId) {
+                        return@onSuccess
+                    }
+                    remoteWatched = episodes.orEmpty()
+                    publishProgress()
+                }
         }
     }
 
@@ -186,5 +239,3 @@ class DetailsViewModel(
     }
 }
 
-/** Меньше — это случайный тык, а не просмотр; предлагать «продолжить» незачем. */
-private const val RESUME_THRESHOLD_MS = 30_000L

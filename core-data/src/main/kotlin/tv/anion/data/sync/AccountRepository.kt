@@ -41,6 +41,20 @@ class PreferencesSyncStateStore(context: Context) : SyncStateStore {
     private companion object { const val KEY = "last_sync_at" }
 }
 
+/** Разовое действие, которое не должно повторяться после перезапуска. */
+interface OneTimeFlag {
+    fun isSet(): Boolean
+    fun set()
+}
+
+class PreferencesOneTimeFlag(context: Context, private val key: String) : OneTimeFlag {
+    private val preferences = context.applicationContext
+        .getSharedPreferences("anion_account", Context.MODE_PRIVATE)
+
+    override fun isSet(): Boolean = preferences.getBoolean(key, false)
+    override fun set() { preferences.edit().putBoolean(key, true).apply() }
+}
+
 interface AccountRepository {
     val signedIn: StateFlow<Boolean>
     val profile: StateFlow<UserProfile?>

@@ -39,7 +39,8 @@ interface WatchProgressRepository {
     fun observeAnime(source: SourceId, animeId: String): Flow<List<WatchProgress>>
     suspend fun get(source: SourceId, animeId: String, episode: Int): WatchProgress?
     suspend fun save(update: ProgressUpdate): WatchProgress
-    suspend fun pendingSync(): List<WatchProgress>
+    suspend fun pendingFinishedSync(source: SourceId): List<WatchProgress>
+    suspend fun finished(source: SourceId): List<WatchProgress>
     suspend fun markSynced(progress: WatchProgress): Boolean
 }
 
@@ -80,7 +81,11 @@ class RoomWatchProgressRepository(
         return row.toModel()
     }
 
-    override suspend fun pendingSync(): List<WatchProgress> = store.pendingSync().map(WatchProgressEntity::toModel)
+    override suspend fun pendingFinishedSync(source: SourceId): List<WatchProgress> =
+        store.pendingFinishedSync(source.name).map(WatchProgressEntity::toModel)
+
+    override suspend fun finished(source: SourceId): List<WatchProgress> =
+        store.finished(source.name).map(WatchProgressEntity::toModel)
 
     override suspend fun markSynced(progress: WatchProgress): Boolean =
         store.markSynced(
@@ -97,6 +102,39 @@ object ProgressPolicy {
 
     fun isFinished(positionMs: Long, durationMs: Long): Boolean =
         durationMs > 0 && positionMs.toDouble() / durationMs >= FINISHED_FRACTION
+}
+
+/** Что показать на карточке тайтла по сериям. */
+data class EpisodeMarks(
+    val watched: Set<Int>,
+    /** Доля просмотра недосмотренных серий — тонкая полоска на карточке. */
+    val partial: Map<Int, Float>,
+    /** Самая свежая недосмотренная серия, которую стоит предложить продолжить. */
+    val resume: WatchProgress?,
+)
+
+object EpisodeMarksPolicy {
+    /** Меньше — это случайный тык, а не просмотр; предлагать «продолжить» незачем. */
+    const val RESUME_THRESHOLD_MS = 30_000L
+
+    /**
+     * Отметка важнее позиции: серия, отмеченная в аккаунте на сайте или другом
+     * устройстве, считается просмотренной, даже если здесь её досмотрели лишь
+     * частично. Такая серия не рисует полоску и не предлагается к продолжению.
+     */
+    fun of(local: List<WatchProgress>, remoteWatched: Set<Int>): EpisodeMarks {
+        val watched = local.filter { it.finished }.mapTo(mutableSetOf()) { it.episode } + remoteWatched
+        val inProgress = local.filterNot { it.episode in watched }
+        return EpisodeMarks(
+            watched = watched,
+            partial = inProgress
+                .filter { it.durationMs > 0 }
+                .associate { it.episode to (it.positionMs.toFloat() / it.durationMs).coerceIn(0f, 1f) },
+            resume = inProgress
+                .filter { it.positionMs > RESUME_THRESHOLD_MS }
+                .maxByOrNull { it.updatedAt },
+        )
+    }
 }
 
 private fun WatchProgressEntity.toModel() = WatchProgress(

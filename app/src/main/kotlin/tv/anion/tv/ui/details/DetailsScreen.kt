@@ -82,7 +82,10 @@ fun DetailsScreen(
 ) {
     val container = LocalAppContainer.current
     val vm = viewModel {
-        DetailsViewModel(container.sources, container.watchProgress, container.bookmarks, container.bookmarkSync)
+        DetailsViewModel(
+            container.sources, container.watchProgress, container.bookmarks, container.bookmarkSync,
+            container.accountWatchedEpisodes, container.account.signedIn,
+        )
     }
     val state by vm.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()

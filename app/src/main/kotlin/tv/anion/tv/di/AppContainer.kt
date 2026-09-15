@@ -15,11 +15,14 @@ import tv.anion.data.repo.CachedAnimeSource
 import tv.anion.data.repo.RoomBookmarkRepository
 import tv.anion.data.repo.RoomSearchHistoryRepository
 import tv.anion.data.repo.RoomWatchProgressRepository
+import tv.anion.data.sync.AccountWatchedEpisodes
 import tv.anion.data.sync.ClientInfo
 import tv.anion.data.sync.DefaultAccountRepository
 import tv.anion.data.sync.DefaultBookmarkSync
 import tv.anion.data.sync.HttpBookmarkRemote
+import tv.anion.data.sync.HttpWatchProgressRemote
 import tv.anion.data.sync.PlaybackProgressRecorder
+import tv.anion.data.sync.PreferencesOneTimeFlag
 import tv.anion.data.sync.PreferencesSessionStore
 import tv.anion.data.sync.PreferencesSyncStateStore
 import tv.anion.player.ExoPlaybackController
@@ -54,9 +57,17 @@ class AppContainer(context: Context) {
     val searchHistory = RoomSearchHistoryRepository(database.searchHistory())
     private val sessions = PreferencesSessionStore(appContext)
     private val bookmarkRemote = HttpBookmarkRemote(http, clientInfo = ClientInfo.current())
+    val watchProgressRemote = HttpWatchProgressRemote(http, clientInfo = ClientInfo.current())
     val bookmarkSync = DefaultBookmarkSync(
-        bookmarks, bookmarkRemote, sessions, watchProgress, PreferencesSyncStateStore(appContext),
+        repository = bookmarks,
+        remote = bookmarkRemote,
+        sessions = sessions,
+        progress = watchProgress,
+        syncState = PreferencesSyncStateStore(appContext),
+        progressRemote = watchProgressRemote,
+        progressMigration = PreferencesOneTimeFlag(appContext, "watch_progress_migrated_v1"),
     )
+    val accountWatchedEpisodes = AccountWatchedEpisodes(watchProgressRemote, sessions)
     val account = DefaultAccountRepository(bookmarkRemote, sessions)
     val progressRecorder = PlaybackProgressRecorder(
         applicationScope, watchProgress, bookmarks, bookmarkSync,

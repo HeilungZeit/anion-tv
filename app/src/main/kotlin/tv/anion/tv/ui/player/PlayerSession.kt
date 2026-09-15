@@ -71,7 +71,6 @@ internal class PlayerSession(
                 )
                 _title.value = details.anime.title
                 bookmarkSeed = seed
-                container.progressRecorder.begin(seed)
                 progressTemplate = { positionMs, durationMs ->
                     ProgressUpdate(
                         sourceId, animeId, episodeNumber, translationId,

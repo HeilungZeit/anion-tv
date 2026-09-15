@@ -23,16 +23,6 @@ class PlaybackProgressRecorder(
     private val saveJobs = mutableMapOf<String, Job>()
     private var syncJob: Job? = null
 
-    fun begin(seed: BookmarkSeed) {
-        scope.launch {
-            // Иначе новый dirty с watched=0 может обогнать первый pull и затереть
-            // уже существующий прогресс сайта.
-            runCatching { sync.syncNow() }
-            bookmarks.ensureWatching(seed)
-            scheduleSync()
-        }
-    }
-
     fun record(update: ProgressUpdate, seed: BookmarkSeed) {
         val key = key(update)
         pending[key] = Pending(update, seed)
@@ -54,7 +44,9 @@ class PlaybackProgressRecorder(
         saveJobs.remove(key)
         val value = pending.remove(key) ?: return
         val saved = progress.save(value.update)
-        if (saved.finished) bookmarks.advanceWatched(value.seed, saved.episode)
+        if (saved.finished) {
+            bookmarks.completeIfLast(saved.source, saved.animeId, saved.episode, value.seed.totalEpisodes)
+        }
         scheduleSync()
     }
 
