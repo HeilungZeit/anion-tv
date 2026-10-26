@@ -5,7 +5,7 @@ Play и компьютер для обычной установки не нуж�
 
 ## Что скачать
 
-1. Откройте страницу [последнего релиза](https://github.com/HeilungZeit/anion-tv/releases/latest).
+1. Откройте страницу [последнего релиза](https://github.com/anion-online/anion-tv/releases/latest).
 2. Раскройте блок **Assets**.
 3. Скачайте файл `anion-tv-VERSION.apk`.
 
@@ -29,7 +29,7 @@ Play и компьютер для обычной установки не нуж�
 ## Вариант 2: скачать прямо на телевизоре
 
 1. Откройте в браузере телевизора
-   `github.com/HeilungZeit/anion-tv/releases/latest`.
+   `github.com/anion-online/anion-tv/releases/latest`.
 2. В разделе **Assets** скачайте `anion-tv-VERSION.apk`.
 3. Откройте файл из «Загрузок» и разрешите браузеру установку неизвестных
    приложений, если Android попросит.
